@@ -7,6 +7,12 @@ import os
 import sys
 import subprocess
 import threading
+import queue
+
+try:
+    import pyttsx3  # offline TTS (Windows/macOS/Linux)
+except Exception:
+    pyttsx3 = None
 
 mp_face_mesh = mp.solutions.face_mesh
 
@@ -30,6 +36,25 @@ FACE_TOP = 10
 FACE_BOTTOM = 152
 NOSE_TIP = 1
 
+# -------------------------
+# Calibration + thresholds
+# -------------------------
+CALIB_SECONDS = 2.0        # 校准采样时长（秒）
+CALIB_MIN_SAMPLES = 20     # 最少有效采样数
+
+EAR_OPEN_THRESH = 0.20     # 睁眼阈值
+EYE_REL_THRESH = 0.12      # 眼睛相对 baseline 偏移阈值
+HEAD_YAW_THRESH = 0.15     # 头部 yaw 相对 baseline 阈值
+HEAD_PITCH_THRESH = 0.15   # 头部 pitch 相对 baseline 阈值
+
+# 人脸距离/居中判定（基于脸的 bounding box）
+FACE_TOO_FAR_RATIO = 0.18   # 脸在画面中的最小占比（宽或高小于该比例则认为太远）
+FACE_CENTER_THRESH = 0.18  # 脸中心偏离画面中心的阈值（归一化到 [0,1]）
+NO_FACE_PROMPT_SEC = 2.0   # 连续多久检测不到脸才提示
+
+# Linux USB audio device (check with `aplay -l`)
+AUDIO_DEVICE_LINUX = "plughw:1,0"
+
 # 滑动窗口参数
 FOCUS_WINDOW_SECONDS = 10.0     # 滑动窗口长度（秒）
 NOT_FOCUS_THRESHOLD = 0.8       # 在窗口内「不专注」帧的比例阈值
@@ -39,6 +64,65 @@ warning_active = False                         # 当前是否处于“正在播�
 warning_thread = None                          # 播放线程
 warning_stop_event = threading.Event()         # 用来通知线程停止
 warning_process = None                       # 当前正在播放的子进程
+
+# ---- TTS 提示（校准/状态播报）----
+class SpeechManager:
+    def __init__(self):
+        self.enabled = pyttsx3 is not None
+        self._q = queue.Queue()
+        self._last_spoken = {}  # key -> timestamp
+        self._thread = None
+        self._stop = threading.Event()
+
+        if self.enabled:
+            try:
+                self._engine = pyttsx3.init()
+                # 可按需调参
+                self._engine.setProperty('rate', 180)
+                self._engine.setProperty('volume', 1.0)
+            except Exception:
+                self.enabled = False
+                self._engine = None
+
+        if self.enabled:
+            self._thread = threading.Thread(target=self._worker, daemon=True)
+            self._thread.start()
+
+    def _worker(self):
+        while not self._stop.is_set():
+            try:
+                text = self._q.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            try:
+                # 一条一条播，避免重叠
+                self._engine.say(text)
+                self._engine.runAndWait()
+            except Exception:
+                # 若 TTS 崩了，直接降级为关闭
+                self.enabled = False
+
+    def speak(self, key: str, text: str, cooldown_s: float = 3.0):
+        """按 key 做冷却，避免同一句反复刷屏"""
+        if not self.enabled:
+            return
+        now = time.time()
+        last = self._last_spoken.get(key, 0.0)
+        if now - last < cooldown_s:
+            return
+        self._last_spoken[key] = now
+        try:
+            # 清掉队列里积压的旧提示（可选，保证更“实时”）
+            while not self._q.empty():
+                self._q.get_nowait()
+        except Exception:
+            pass
+        self._q.put(text)
+
+    def stop(self):
+        self._stop.set()
+
+speech = SpeechManager()
 
 
 def _get_warning_audio_path() -> str | None:
@@ -60,7 +144,6 @@ def _play_warning_once():
 
     audio_path = _get_warning_audio_path()
     if not audio_path or not os.path.exists(audio_path):
-        print(f"[AUDIO] warning audio not found")
         time.sleep(1.0)
         return
 
@@ -69,8 +152,9 @@ def _play_warning_once():
         if sys.platform == "darwin":
             warning_process = subprocess.Popen(["afplay", audio_path])
         elif sys.platform.startswith("linux"):
+            # Orange Pi / Linux: use ALSA aplay (ffplay usually not installed)
             warning_process = subprocess.Popen(
-                ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", audio_path]
+                ["aplay", "-D", AUDIO_DEVICE_LINUX, audio_path]
             )
         elif sys.platform.startswith("win"):
             warning_process = subprocess.Popen([
@@ -81,7 +165,6 @@ def _play_warning_once():
             # 兜底：再试一次 afplay
             warning_process = subprocess.Popen(["afplay", audio_path])
     except Exception as e:
-        print(f"[AUDIO] Cannot start warning audio: {e}")
         warning_process = None
         return
 
@@ -127,7 +210,6 @@ def start_warning_audio():
         daemon=True
     )
     warning_thread.start()
-    print("[AUDIO] START warning.wav")  # 调试用，之后可以删掉
 
 
 def stop_warning_audio():
@@ -146,8 +228,6 @@ def stop_warning_audio():
             warning_process.terminate()
         except Exception:
             pass
-
-    print("[AUDIO] STOP warning.wav")  # 调试用，之后可以删掉
 
 
 def EAR(top, bottom, left, right):
@@ -216,10 +296,96 @@ def get_head_offset(landmarks, w, h):
     return float(yaw), float(pitch)
 
 
-def main():
-    cap = cv2.VideoCapture(0)
+def get_face_box_stats(landmarks, w, h):
+    """返回 (cx_norm, cy_norm, size_ratio)
+    - cx_norm/cy_norm: 脸中心在画面中的归一化坐标 [0,1]
+    - size_ratio: min(face_width_ratio, face_height_ratio)
+    """
+    xs = [p.x for p in landmarks]
+    ys = [p.y for p in landmarks]
+    minx, maxx = min(xs), max(xs)
+    miny, maxy = min(ys), max(ys)
 
-    if not cap.isOpened():
+    cx = (minx + maxx) / 2.0
+    cy = (miny + maxy) / 2.0
+
+    face_w = maxx - minx
+    face_h = maxy - miny
+    size_ratio = float(min(face_w, face_h))
+    return float(cx), float(cy), size_ratio
+
+
+def open_camera_prefer_usb():
+    """Orange Pi 上 /dev/video0 可能是 cedrus（不是摄像头）；优先尝试 USB 摄像头 index 1/2。"""
+    for idx in (1, 2, 0, 3, 4, 5):
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            return cap
+        cap.release()
+    return None
+
+
+def calibrate_baseline(fm, cap):
+    """采集 CALIB_SECONDS 秒样本，取 median 作为 baseline（不要求看镜头）。"""
+    speech.speak("calib_start", "Calibration starting, please don't move your head", cooldown_s=0.0)
+    eye_samples = []
+    yaw_samples = []
+    pitch_samples = []
+
+    start_t = time.time()
+    while time.time() - start_t < CALIB_SECONDS:
+        ok, frame = cap.read()
+        if not ok:
+            continue
+
+        h, w = frame.shape[:2]
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = fm.process(rgb)
+        if not results.multi_face_landmarks:
+            # 校准阶段没检测到脸：提示把摄像头对准
+            speech.speak("calib_no_face", "please move camera closer to the center", cooldown_s=2.5)
+            continue
+
+        lm = results.multi_face_landmarks[0].landmark
+
+        cx, cy, size_ratio = get_face_box_stats(lm, w, h)
+        if size_ratio < FACE_TOO_FAR_RATIO:
+            speech.speak("calib_too_far", "Too far away", cooldown_s=2.5)
+        # 不强制居中，但偏离很大时也提醒
+        if abs(cx - 0.5) > FACE_CENTER_THRESH or abs(cy - 0.5) > FACE_CENTER_THRESH:
+            speech.speak("calib_center", "please move camera closer to the center", cooldown_s=2.5)
+
+        EAR_L, EAR_R, Loff, Roff = get_eye_features(lm, w, h)
+        eyes_open = (EAR_L > EAR_OPEN_THRESH) and (EAR_R > EAR_OPEN_THRESH)
+        if not eyes_open:
+            speech.speak("calib_open_eyes", "Cannot detect eyes, please open it", cooldown_s=2.0)
+            continue
+
+        eye_offset = (Loff + Roff) / 2.0
+        yaw, pitch = get_head_offset(lm, w, h)
+
+        eye_samples.append(eye_offset)
+        yaw_samples.append(yaw)
+        pitch_samples.append(pitch)
+        time.sleep(0.01)
+
+    if len(eye_samples) < CALIB_MIN_SAMPLES:
+        # 样本不足时使用 0 baseline（仍可运行，但效果可能差一些）
+        speech.speak("calib_failed", "Calibration failed", cooldown_s=0.0)
+        return np.array([0.0, 0.0]), 0.0, 0.0
+
+    eye_samples = np.array(eye_samples)
+    baseline_eye = np.median(eye_samples, axis=0)
+    baseline_yaw = float(np.median(np.array(yaw_samples)))
+    baseline_pitch = float(np.median(np.array(pitch_samples)))
+    speech.speak("calib_done", "Calibration completed", cooldown_s=0.0)
+    return baseline_eye, baseline_yaw, baseline_pitch
+
+
+def main():
+    cap = open_camera_prefer_usb()
+
+    if cap is None:
         raise SystemExit("Camera cannot be opened.")
 
     # 降低分辨率 → 稳定提升 40%
@@ -228,6 +394,7 @@ def main():
 
     # 记录最近一段时间的专注状态（good_focus=True/False）
     focus_history = deque()
+    last_face_seen = time.time()
 
     with mp_face_mesh.FaceMesh(
         max_num_faces=1,
@@ -235,6 +402,10 @@ def main():
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5
     ) as fm:
+
+        # 初始校准：记录当前姿态作为 baseline（不要求直视摄像头）
+        stop_warning_audio()
+        baseline_eye, baseline_yaw, baseline_pitch = calibrate_baseline(fm, cap)
 
         while True:
             ok, frame = cap.read()
@@ -247,29 +418,37 @@ def main():
             results = fm.process(rgb)
 
             if results.multi_face_landmarks:
+                last_face_seen = time.time()
                 lm = results.multi_face_landmarks[0].landmark
 
+                # 基于脸 bounding box 的“距离/居中”提示
+                cx, cy, size_ratio = get_face_box_stats(lm, w, h)
+                if size_ratio < FACE_TOO_FAR_RATIO:
+                    speech.speak("too_far", "Too far away", cooldown_s=3.0)
+                if abs(cx - 0.5) > FACE_CENTER_THRESH or abs(cy - 0.5) > FACE_CENTER_THRESH:
+                    speech.speak("move_center", "please move camera closer to the center", cooldown_s=3.0)
+
                 EAR_L, EAR_R, Loff, Roff = get_eye_features(lm, w, h)
+                eyes_open = (EAR_L > EAR_OPEN_THRESH) and (EAR_R > EAR_OPEN_THRESH)
+                if not eyes_open:
+                    speech.speak("open_eyes", "Cannot detect eyes, please open it", cooldown_s=2.5)
 
-                # 眼睛是否睁开
-                eyes_open = (EAR_L > 0.20) and (EAR_R > 0.20)
-
-                # 眼睛注视偏移（左右眼偏移的平均值，归一化在大约 [-0.5, 0.5]）
+                # 下面保持你原来的逻辑（eye/head focus + 滑窗告警）
                 eye_offset = (Loff + Roff) / 2.0
-                eye_focus = np.linalg.norm(eye_offset) < 0.12  # 越小越严格
-
-                # 头部相对摄像头的偏移（yaw 左右, pitch 上下），归一化在大约 [-1, 1]
                 yaw, pitch = get_head_offset(lm, w, h)
-                head_center = (abs(yaw) < 0.15) and (abs(pitch) < 0.15)
 
-                # 定义「专注」：眼睛睁开 + 眼睛对准 + 头部对准
+                eye_rel = eye_offset - baseline_eye
+                yaw_rel = yaw - baseline_yaw
+                pitch_rel = pitch - baseline_pitch
+
+                eye_focus = np.linalg.norm(eye_rel) < EYE_REL_THRESH
+                head_center = (abs(yaw_rel) < HEAD_YAW_THRESH) and (abs(pitch_rel) < HEAD_PITCH_THRESH)
+
                 good_focus = eyes_open and eye_focus and head_center
 
                 now = time.time()
-                # 记录当前帧的专注状态
                 focus_history.append((now, good_focus))
 
-                # 滑动窗口：只保留最近 FOCUS_WINDOW_SECONDS 内的记录
                 while focus_history and focus_history[0][0] < now - FOCUS_WINDOW_SECONDS:
                     focus_history.popleft()
 
@@ -278,18 +457,24 @@ def main():
                     bad = sum(1 for _, ok in focus_history if not ok)
                     ratio_bad = bad / total
 
-                    # 如果在窗口内有超过一定比例的「不专注」帧，则触发语音警告
                     if ratio_bad >= NOT_FOCUS_THRESHOLD:
                         start_warning_audio()
                     else:
-                        # 恢复专注：停止语音警告
                         stop_warning_audio()
+            else:
+                # 连续一段时间没有检测到脸才提示（避免偶尔丢帧就说话）
+                if time.time() - last_face_seen > NO_FACE_PROMPT_SEC:
+                    speech.speak("no_face", "please move camera closer to the center", cooldown_s=3.0)
 
             time.sleep(0.05)  # 给 Pi 降负载（FPS ~15）
 
     cap.release()
     # 退出前保证停止告警
     stop_warning_audio()
+    try:
+        speech.stop()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
