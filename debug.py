@@ -489,6 +489,7 @@ def main():
         baseline_eye, baseline_yaw, baseline_pitch = calibrate_baseline(fm, cap)
 
         focus_history = deque()
+        no_person_since = None
         cam_fail_streak = 0
 
         while True:
@@ -516,6 +517,7 @@ def main():
                 pitch_rel = 0.0
 
                 if results.multi_face_landmarks:
+                    no_person_since = None
                     lm = results.multi_face_landmarks[0].landmark
 
                     EAR_L, EAR_R, Loff, Roff = get_eye_features(lm, w, h)
@@ -550,13 +552,21 @@ def main():
                         else:
                             stop_warning_audio()
                 else:
-                    # No face detected → single runtime warning
+                    # No face detected:
+                    # 1) 不更新 focus_history
+                    # 2) 不计算 ratio_bad
+                    # 3) 强制停止 warning.wav
                     stop_warning_audio()
-                    speech.speak(
-                        "no_person",
-                        "Cannot see a person, please adjust the camera",
-                        cooldown_s=5.0
-                    )
+
+                    now = time.time()
+                    if no_person_since is None:
+                        no_person_since = now
+                    elif now - no_person_since >= NO_FACE_PROMPT_SEC:
+                        speech.speak(
+                            "no_person",
+                            "Cannot see a person, please adjust the camera",
+                            cooldown_s=5.0
+                        )
 
                 # Always handle UI + keys when DEBUG_VIS is enabled
                 if DEBUG_VIS:
