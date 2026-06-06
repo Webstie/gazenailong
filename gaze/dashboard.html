@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gaze Nailong — Focus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --cream:#F2EEE5;
+    --cream-2:#EAE4D6;
+    --paper:#FFFFFF;
+    --ink:#0E1B33;
+    --ink-soft:#243353;
+    --muted:#7A8194;
+    --line:rgba(14,27,51,.08);
+    --line-strong:rgba(14,27,51,.14);
+    --green:#15B886;
+    --green-soft:#D7F2E6;
+    --orange:#F1A33F;
+    --orange-soft:#FCE7CB;
+    --red:#E5564E;
+    --red-soft:#FBD9D6;
+    --indigo:#3F6FFB;
+    --indigo-soft:#DCE5FE;
+    --hero-end:#0E1B33;
+    --shadow:0 22px 50px -32px rgba(14,27,51,.4), 0 2px 6px -3px rgba(14,27,51,.08);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--cream);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+
+  /* ---- top bar ---- */
+  header{
+    display:flex;align-items:center;gap:14px;
+    padding:20px 32px;max-width:1320px;margin:0 auto;
+  }
+  .brand{display:flex;align-items:center;gap:10px}
+  .logo{
+    width:36px;height:36px;border-radius:11px;flex:none;
+    background:linear-gradient(135deg,var(--ink) 0%,#1f3464 100%);
+    display:grid;place-items:center;color:#F2EEE5;font-weight:800;font-size:15px;
+    box-shadow:0 8px 18px -8px rgba(14,27,51,.5);
+  }
+  header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:-.015em}
+  header .sub{font-size:12px;color:var(--muted);font-weight:500}
+  .pill{
+    font-size:11.5px;color:var(--ink-soft);font-weight:600;
+    background:var(--paper);border:1px solid var(--line);
+    border-radius:999px;padding:6px 12px;display:inline-flex;align-items:center;gap:7px;
+  }
+  .pill .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+  .pill.ok .dot{background:var(--green);box-shadow:0 0 0 3px rgba(21,184,134,.18)}
+  .pill.warn .dot{background:var(--orange);box-shadow:0 0 0 3px rgba(241,163,63,.22)}
+  .pill.bad .dot{background:var(--red);box-shadow:0 0 0 3px rgba(229,86,78,.25)}
+  .actions{margin-left:auto;display:flex;gap:8px}
+  button{
+    appearance:none;cursor:pointer;font-family:inherit;
+    background:var(--paper);color:var(--ink);
+    border:1px solid var(--line);border-radius:12px;
+    padding:9px 14px;font-size:12.5px;font-weight:600;
+    transition:transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+  button:hover{border-color:var(--line-strong)}
+  button:active{transform:translateY(1px)}
+  button.primary{
+    background:var(--ink);color:#F2EEE5;border-color:var(--ink);
+    box-shadow:0 14px 30px -16px rgba(14,27,51,.55);
+  }
+  button.primary:hover{background:#1a2a4f}
+
+  /* ---- layout ---- */
+  .wrap{
+    padding:8px 32px 40px;
+    display:grid;grid-template-columns:repeat(12,1fr);gap:18px;
+    max-width:1320px;margin:0 auto;
+  }
+  .card{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:22px;
+    padding:22px;
+    box-shadow:var(--shadow);
+  }
+  .card h2{
+    font-size:11px;text-transform:uppercase;letter-spacing:.12em;
+    color:var(--muted);margin:0 0 16px;font-weight:700;
+  }
+  .span3{grid-column:span 3}
+  .span4{grid-column:span 4}
+  .span5{grid-column:span 5}
+  .span6{grid-column:span 6}
+  .span7{grid-column:span 7}
+  .span8{grid-column:span 8}
+  .span12{grid-column:span 12}
+
+  /* ---- hero attention card ---- */
+  .hero{
+    position:relative;
+    border-radius:22px;
+    padding:26px 26px 22px;
+    background:
+      radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 55%),
+      linear-gradient(180deg,#FBF8F1 0%,#6B7BA0 55%,var(--hero-end) 100%);
+    color:#F4EEDF;
+    overflow:hidden;isolation:isolate;
+    box-shadow:var(--shadow);
+    min-height:230px;
+    display:flex;flex-direction:column;justify-content:space-between;
+  }
+  .hero::after{
+    content:"";position:absolute;inset:auto -20% -60% auto;width:340px;height:340px;
+    border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,.16), rgba(255,255,255,0) 60%);
+    z-index:0;
+  }
+  .hero .label{
+    font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:rgba(244,238,223,.7);font-weight:700;position:relative;z-index:1;
+  }
+  .hero .num{
+    font-size:64px;font-weight:800;letter-spacing:-.035em;line-height:1;
+    margin:14px 0 2px;position:relative;z-index:1;
+    font-feature-settings:"tnum" 1, "lnum" 1;
+  }
+  .hero .num small{font-size:24px;font-weight:600;opacity:.8;margin-left:4px}
+  .hero .sub{font-size:13px;color:rgba(244,238,223,.78);font-weight:500;position:relative;z-index:1}
+  .ring{position:relative;z-index:1;margin-top:18px;height:7px;border-radius:999px;background:rgba(255,255,255,.18);overflow:hidden}
+  .ring i{display:block;height:100%;width:0;border-radius:999px;
+    background:linear-gradient(90deg,#A8E7CD,#15B886);
+    transition:width .35s ease, background .25s ease;}
+  body.alert .ring i{background:linear-gradient(90deg,#F8B6B1,#E5564E)}
+
+  /* ---- today summary ---- */
+  .summary .stats{
+    display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;
+  }
+  .summary .cell .num{
+    font-size:28px;font-weight:800;letter-spacing:-.02em;color:var(--ink);
+    font-feature-settings:"tnum" 1;line-height:1.1;
+  }
+  .summary .cell .num small{font-size:13px;color:var(--muted);font-weight:600;margin-left:2px}
+  .summary .cell .lbl{
+    font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+    margin-top:6px;
+  }
+  .summary .badge{
+    margin-top:14px;display:inline-flex;gap:6px;align-items:center;
+    font-size:11.5px;font-weight:600;color:var(--ink);
+    background:var(--cream-2);border-radius:999px;padding:5px 11px;
+  }
+
+  /* ---- preview ---- */
+  .preview{
+    position:relative;border-radius:16px;overflow:hidden;
+    background:linear-gradient(135deg,#101a2f,#1d2c50);
+    aspect-ratio:4/3;
+  }
+  .preview img{width:100%;height:100%;object-fit:cover;display:block}
+  .preview .floating{
+    position:absolute;left:14px;bottom:14px;
+    background:rgba(255,255,255,.92);backdrop-filter:blur(6px);
+    border-radius:999px;padding:6px 12px;font-size:11.5px;font-weight:600;color:var(--ink);
+    box-shadow:0 8px 24px -10px rgba(14,27,51,.5);
+  }
+
+  .note{font-size:12px;color:var(--muted);margin-top:12px;font-weight:500}
+
+  /* ---- charts ---- */
+  canvas{max-height:260px;width:100%!important}
+  .chart-tall canvas{max-height:300px}
+
+  /* responsive squeeze */
+  @media (max-width:1000px){
+    .span4,.span5,.span6,.span7,.span8{grid-column:span 12}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">G</div>
+    <div>
+      <h1>Gaze Nailong</h1>
+      <div class="sub">Quiet focus monitor</div>
+    </div>
+  </div>
+  <span class="pill" id="statePill"><span class="dot"></span><span id="stateText">connecting…</span></span>
+  <span class="pill" id="ttsPill">voice: —</span>
+  <div class="actions">
+    <button onclick="ctrl('recalibrate')">Recalibrate</button>
+    <button class="primary" id="pauseBtn" onclick="togglePause()">Pause</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- HERO -->
+  <section class="hero span5" id="hero">
+    <div>
+      <div class="label">Attention right now</div>
+      <div class="num" id="heroPct">—<small>%</small></div>
+      <div class="sub" id="heroSub">connecting…</div>
+    </div>
+    <div class="ring"><i id="heroBar"></i></div>
+  </section>
+
+  <!-- SUMMARY -->
+  <section class="card summary span7">
+    <h2>Today</h2>
+    <div class="stats">
+      <div class="cell">
+        <div class="num" id="todayFocus">—<small>%</small></div>
+        <div class="lbl">average focus</div>
+      </div>
+      <div class="cell">
+        <div class="num" id="todayMin">—<small>min</small></div>
+        <div class="lbl">on task</div>
+      </div>
+      <div class="cell">
+        <div class="num" id="todayDis">—</div>
+        <div class="lbl">nudges</div>
+      </div>
+    </div>
+    <span class="badge" id="stateBadge">—</span>
+  </section>
+
+  <!-- LIVE PREVIEW -->
+  <section class="card span7">
+    <h2>Live</h2>
+    <div class="preview">
+      <img src="/video" alt="live preview">
+      <div class="floating" id="liveBadge">monitoring</div>
+    </div>
+    <p class="note" id="liveNote">Soft border = focused. You'll hear gentle nudges only when you drift.</p>
+  </section>
+
+  <!-- BREAKDOWN -->
+  <section class="card span5">
+    <h2>Distraction mix · 24h</h2>
+    <canvas id="breakdown" height="220"></canvas>
+  </section>
+
+  <!-- TIMELINE -->
+  <section class="card span8 chart-tall">
+    <h2>Focus · last 15 minutes</h2>
+    <canvas id="timeline"></canvas>
+  </section>
+
+  <!-- DAILY -->
+  <section class="card span4 chart-tall">
+    <h2>Last 7 days</h2>
+    <canvas id="daily" height="240"></canvas>
+  </section>
+</div>
+
+<script>
+const COLORS = {
+  ink:'#0E1B33', muted:'#7A8194', line:'rgba(14,27,51,.08)',
+  green:'#15B886', greenSoft:'rgba(21,184,134,.15)',
+  indigo:'#3F6FFB', orange:'#F1A33F', red:'#E5564E',
+  state:{focused:'#15B886', drowsy:'#3F6FFB', looking_away:'#5BB1CF',
+         head_turned:'#F1A33F', no_face:'#B8BDCB', idle:'#B8BDCB',
+         calibrating:'#F1A33F', paused:'#7A8194'},
+};
+let paused=false;
+
+async function ctrl(action){ try{ await fetch('/api/control/'+action,{method:'POST'}); }catch(e){} }
+async function togglePause(){ await ctrl(paused?'resume':'pause'); }
+
+function pretty(s){return (s||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
+
+/* ---- timeline (area chart) ---- */
+const timeline = new Chart(document.getElementById('timeline'),{
+  type:'line',
+  data:{labels:[],datasets:[{
+    label:'Attention',data:[],
+    borderColor:COLORS.green,backgroundColor:COLORS.greenSoft,
+    fill:true,tension:.35,pointRadius:0,borderWidth:2.5,
+  }]},
+  options:{
+    scales:{
+      y:{min:0,max:100,
+         grid:{color:COLORS.line,drawBorder:false},
+         ticks:{color:COLORS.muted,font:{family:'Inter',size:11},callback:v=>v+'%'}},
+      x:{grid:{display:false,drawBorder:false},
+         ticks:{color:COLORS.muted,font:{family:'Inter',size:11},maxTicksLimit:7}}
+    },
+    plugins:{legend:{display:false},
+             tooltip:{backgroundColor:COLORS.ink,padding:10,cornerRadius:10,
+                      titleFont:{family:'Inter',size:11,weight:'600'},
+                      bodyFont:{family:'Inter',size:12,weight:'700'}}},
+    responsive:true,maintainAspectRatio:false,animation:{duration:300}
+  }
+});
+
+/* ---- breakdown (doughnut) ---- */
+const breakdown = new Chart(document.getElementById('breakdown'),{
+  type:'doughnut',
+  data:{labels:[],datasets:[{data:[],backgroundColor:[],borderColor:'#FFFFFF',borderWidth:3}]},
+  options:{
+    cutout:'62%',
+    plugins:{legend:{position:'right',
+                     labels:{color:COLORS.ink,boxWidth:10,boxHeight:10,
+                             font:{family:'Inter',size:12,weight:'500'},padding:12}},
+             tooltip:{backgroundColor:COLORS.ink,padding:10,cornerRadius:10}},
+    responsive:true,maintainAspectRatio:false
+  }
+});
+
+/* ---- daily (bar) ---- */
+const daily = new Chart(document.getElementById('daily'),{
+  type:'bar',
+  data:{labels:[],datasets:[{label:'Avg focus %',data:[],
+    backgroundColor:COLORS.ink,borderRadius:8,maxBarThickness:22}]},
+  options:{
+    scales:{
+      y:{min:0,max:100,grid:{color:COLORS.line,drawBorder:false},
+         ticks:{color:COLORS.muted,font:{family:'Inter',size:11},callback:v=>v+'%'}},
+      x:{grid:{display:false,drawBorder:false},
+         ticks:{color:COLORS.muted,font:{family:'Inter',size:11}}}
+    },
+    plugins:{legend:{display:false},
+             tooltip:{backgroundColor:COLORS.ink,padding:10,cornerRadius:10}},
+    responsive:true,maintainAspectRatio:false
+  }
+});
+
+async function pollStatus(){
+  try{
+    const s = await (await fetch('/api/status')).json();
+    paused = s.paused;
+    document.getElementById('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+
+    const stateText = s.no_camera ? 'no camera'
+      : (s.error ? 'error'
+      : (s.calibrating ? 'calibrating…'
+      : (s.paused ? 'paused'
+      : pretty(s.state))));
+    document.getElementById('stateText').textContent = stateText;
+    document.getElementById('stateBadge').textContent = pretty(s.state);
+
+    const pill = document.getElementById('statePill');
+    pill.classList.remove('ok','warn','bad');
+    if(s.in_warning) pill.classList.add('bad');
+    else if(s.focused) pill.classList.add('ok');
+    else if(s.calibrating) pill.classList.add('warn');
+
+    document.getElementById('ttsPill').textContent = 'voice: '+(s.tts_backend||'none');
+    document.body.classList.toggle('alert', !!s.in_warning);
+
+    const att = (typeof s.attention === 'number')
+                  ? s.attention
+                  : Math.max(0, 1 - (s.bad_ratio||0));
+    const pct = Math.round(att*100);
+    const showNum = !(s.calibrating||s.no_camera);
+    document.getElementById('heroPct').innerHTML = showNum ? pct+'<small>%</small>' : '—<small></small>';
+    document.getElementById('heroBar').style.width = (showNum?pct:0)+'%';
+
+    document.getElementById('heroSub').textContent =
+      s.no_camera ? 'no camera detected'
+      : (s.calibrating ? 'learning your baseline'
+      : (s.in_warning ? 'drifted — refocus when ready'
+      : (paused ? 'paused' : '60-second rolling window')));
+
+    document.getElementById('liveBadge').textContent =
+      s.in_warning ? 'drifted'
+      : (s.focused ? 'focused'
+      : (s.calibrating ? 'calibrating' : (paused?'paused':'monitoring')));
+
+    if(s.today){
+      document.getElementById('todayFocus').innerHTML = (s.today.avg_focused ?? '—')+'<small>%</small>';
+      document.getElementById('todayMin').innerHTML   = (s.today.focused_minutes ?? '—')+'<small>min</small>';
+      document.getElementById('todayDis').textContent = (s.today.distractions ?? '—');
+    }
+    document.getElementById('liveNote').textContent =
+      s.calibrating ? 'Sit naturally and stay in frame — calibrating your baseline.'
+      : (s.no_camera ? 'No camera detected. Plug in or grant camera permission.'
+      : 'Soft border = focused. You’ll hear gentle nudges only when you drift.');
+  }catch(e){
+    document.getElementById('stateText').textContent='disconnected';
+  }
+}
+
+async function pollHistory(){
+  try{
+    const h = await (await fetch('/api/history')).json();
+    timeline.data.labels = h.timeline.map(p=>new Date(p.ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+    timeline.data.datasets[0].data = h.timeline.map(p=>Math.round(p.focused*100));
+    timeline.update('none');
+
+    const secs = h.breakdown.seconds||{};
+    const keys = Object.keys(secs);
+    if(keys.length===0){
+      breakdown.data.labels = ['No distractions'];
+      breakdown.data.datasets[0].data = [1];
+      breakdown.data.datasets[0].backgroundColor = ['#EAE4D6'];
+    }else{
+      breakdown.data.labels = keys.map(k=>pretty(k)+' ('+Math.round(secs[k])+'s)');
+      breakdown.data.datasets[0].data = keys.map(k=>Math.round(secs[k]));
+      breakdown.data.datasets[0].backgroundColor = keys.map(k=>COLORS.state[k]||'#B8BDCB');
+    }
+    breakdown.update();
+
+    daily.data.labels = h.daily.map(d=>d.day);
+    daily.data.datasets[0].data = h.daily.map(d=>d.focused);
+    daily.update();
+  }catch(e){}
+}
+
+pollStatus(); pollHistory();
+setInterval(pollStatus, 1000);
+setInterval(pollHistory, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gaze Nailong</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --W:294px; --H:460px;
+    --cream:#F2EEE5;
+    --cream-2:#EAE4D6;
+    --paper:#FFFFFF;
+    --ink:#0E1B33;
+    --ink-soft:#243353;
+    --muted:#7A8194;
+    --line:rgba(14,27,51,.08);
+    --line-strong:rgba(14,27,51,.14);
+    --green:#15B886;
+    --green-soft:#D7F2E6;
+    --orange:#F1A33F;
+    --red:#E5564E;
+    --hero-end:#0E1B33;
+    --shadow:0 14px 28px -22px rgba(14,27,51,.45), 0 1px 3px -1px rgba(14,27,51,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;overflow:hidden}
+  html,body{width:var(--W);height:var(--H);max-width:var(--W);max-height:var(--H)}
+  body{
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--cream);
+    color:var(--ink);
+    padding:11px;
+    display:flex;
+    flex-direction:column;
+    gap:9px;
+    font-size:11px;
+    line-height:1.35;
+    transition:background .25s ease;
+    -webkit-font-smoothing:antialiased;
+    user-select:none;
+  }
+  body.alert{background:#F3DCD9}
+
+  /* ---- header ---- */
+  .top{display:flex;align-items:center;gap:8px;padding:0 2px}
+  .brand{display:flex;align-items:center;gap:7px;flex:1;min-width:0}
+  .logo{
+    width:22px;height:22px;border-radius:7px;flex:none;
+    background:linear-gradient(135deg,var(--ink) 0%,#1f3464 100%);
+    display:grid;place-items:center;color:#F2EEE5;font-weight:800;font-size:10px;
+    box-shadow:0 4px 10px -4px rgba(14,27,51,.45);
+  }
+  .top h1{font-size:12px;margin:0;font-weight:700;letter-spacing:-.01em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pulse{
+    display:inline-flex;align-items:center;gap:5px;
+    font-size:9.5px;font-weight:600;color:var(--muted);
+    background:var(--paper);border:1px solid var(--line);
+    padding:3px 7px;border-radius:999px;
+  }
+  .pulse .dot{width:6px;height:6px;border-radius:50%;background:var(--muted)}
+  .pulse.ok .dot{background:var(--green);box-shadow:0 0 0 2.5px rgba(21,184,134,.18)}
+  .pulse.warn .dot{background:var(--orange);box-shadow:0 0 0 2.5px rgba(241,163,63,.22)}
+  .pulse.bad .dot{background:var(--red);box-shadow:0 0 0 2.5px rgba(229,86,78,.25)}
+  .closebtn{
+    appearance:none;cursor:pointer;font-family:inherit;
+    background:transparent;border:1px solid var(--line);border-radius:7px;
+    width:22px;height:22px;color:var(--ink);
+    display:grid;place-items:center;font-size:14px;line-height:1;font-weight:600;
+    padding:0;
+  }
+  .closebtn:hover{background:var(--red);border-color:var(--red);color:#fff}
+
+  /* ---- hero card (attention) ---- */
+  .hero{
+    position:relative;
+    border-radius:16px;
+    padding:13px 14px 12px;
+    background:
+      radial-gradient(140% 90% at 0% 0%, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 55%),
+      linear-gradient(180deg,#FBF8F1 0%,#6B7BA0 55%,var(--hero-end) 100%);
+    color:#F4EEDF;
+    box-shadow:var(--shadow);
+    overflow:hidden;
+    isolation:isolate;
+  }
+  .hero::after{
+    content:"";position:absolute;inset:auto -25% -55% auto;width:140px;height:140px;
+    border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,.15), rgba(255,255,255,0) 60%);
+    z-index:0;
+  }
+  .hero .label{
+    font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+    color:rgba(244,238,223,.7);font-weight:700;position:relative;z-index:1;
+  }
+  .hero .num{
+    font-size:30px;font-weight:800;letter-spacing:-.025em;line-height:1;
+    margin-top:3px;position:relative;z-index:1;
+    font-feature-settings:"tnum" 1, "lnum" 1;
+  }
+  .hero .num small{font-size:14px;font-weight:600;opacity:.8;margin-left:2px}
+  .hero .sub{
+    margin-top:3px;font-size:10px;color:rgba(244,238,223,.7);font-weight:500;
+    position:relative;z-index:1;
+  }
+  .ring{
+    position:relative;z-index:1;margin-top:9px;
+    height:5px;border-radius:999px;background:rgba(255,255,255,.18);overflow:hidden;
+  }
+  .ring i{display:block;height:100%;width:0%;border-radius:999px;
+    background:linear-gradient(90deg,#A8E7CD,#15B886);
+    transition:width .35s ease, background .25s ease;}
+  body.alert .ring i{background:linear-gradient(90deg,#F8B6B1,#E5564E)}
+
+  /* ---- live preview row ---- */
+  .preview{
+    background:var(--paper);border:1px solid var(--line);
+    border-radius:13px;padding:8px;
+    display:grid;grid-template-columns:64px 1fr auto;gap:10px;align-items:center;
+    box-shadow:var(--shadow);
+  }
+  .preview .thumb{
+    width:64px;height:48px;border-radius:8px;overflow:hidden;
+    background:linear-gradient(135deg,#101a2f,#1d2c50);
+  }
+  .preview .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .preview .meta{min-width:0}
+  .preview .meta b{display:block;font-size:11px;font-weight:700;color:var(--ink);
+                   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.01em}
+  .preview .meta span{display:block;font-size:9.5px;color:var(--muted);font-weight:600;margin-top:1px}
+  .preview .swap{
+    appearance:none;cursor:pointer;font-family:inherit;
+    background:var(--cream-2);border:none;border-radius:8px;padding:6px 9px;
+    font-size:10px;font-weight:700;color:var(--ink);
+  }
+  .preview .swap:hover{background:#dfd8c5}
+
+  /* ---- message banner ---- */
+  .msg{
+    font-size:10.5px;color:var(--ink-soft);
+    background:var(--paper);border:1px solid var(--line);
+    border-radius:11px;padding:7px 9px;line-height:1.35;
+    box-shadow:var(--shadow);
+  }
+  .msg:empty{display:none}
+
+  /* ---- today stats ---- */
+  .today{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:13px;
+    padding:9px 4px;
+    display:grid;grid-template-columns:repeat(3,1fr);
+    box-shadow:var(--shadow);
+  }
+  .today .s{text-align:center;position:relative}
+  .today .s + .s::before{
+    content:"";position:absolute;left:0;top:18%;height:64%;width:1px;background:var(--line);
+  }
+  .today .s b{display:block;font-size:13px;font-weight:700;color:var(--ink);letter-spacing:-.01em;font-feature-settings:"tnum" 1;line-height:1.1}
+  .today .s b small{font-size:8.5px;color:var(--muted);font-weight:600;margin-left:1px}
+  .today .s span{font-size:8.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-top:2px;display:block}
+
+  /* ---- icon action row ---- */
+  .acts{display:flex;gap:6px}
+  button.ico{
+    appearance:none;cursor:pointer;font-family:inherit;
+    flex:1;height:34px;
+    background:var(--paper);border:1px solid var(--line);border-radius:10px;
+    color:var(--ink);font-size:14px;
+    display:grid;place-items:center;
+    box-shadow:var(--shadow);
+    transition:transform .12s ease, border-color .12s ease, background .12s ease, color .12s ease;
+  }
+  button.ico:hover{border-color:var(--line-strong);transform:translateY(-1px)}
+  button.ico:active{transform:translateY(0)}
+  button.ico.on{background:var(--green-soft);border-color:transparent;color:var(--green)}
+  button.ico .glyph{font-size:13px;line-height:1}
+  button.ico[data-tip]{position:relative}
+  button.ico[data-tip]::after{
+    content:attr(data-tip);
+    position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);
+    background:var(--ink);color:#F4EEDF;font-size:9.5px;font-weight:600;
+    padding:3px 7px;border-radius:6px;white-space:nowrap;
+    opacity:0;pointer-events:none;transition:opacity .12s ease .25s;
+    z-index:10;
+  }
+  button.ico[data-tip]:hover::after{opacity:1}
+
+  /* ---- big CTA ---- */
+  /* Intentionally NO margin-top:auto — letting the CTA float to the bottom
+     of the flex column created a 100px+ blank gap between the action row and
+     the CTA, and on macOS Chrome --app the title bar eats ~30px of the
+     reported window height, which then clipped the CTA. We let it flow
+     naturally right under the action row, and size the window to fit. */
+  button.cta{
+    appearance:none;cursor:pointer;font-family:inherit;
+    background:var(--ink);color:#F4EEDF;
+    border:none;border-radius:11px;padding:10px;
+    font-size:11px;font-weight:700;letter-spacing:.01em;
+    display:flex;align-items:center;justify-content:center;gap:5px;
+    box-shadow:0 10px 22px -12px rgba(14,27,51,.55);
+    transition:transform .12s ease, background .12s ease;
+  }
+  button.cta:hover{background:#1a2a4f}
+  button.cta:active{transform:translateY(1px)}
+
+  /* ---- camera picker overlay ---- */
+  .picker{
+    position:fixed;inset:0;background:rgba(14,27,51,.55);
+    backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    display:none;z-index:50;
+  }
+  .picker.open{display:block}
+  .picker .sheet{
+    position:absolute;left:11px;right:11px;bottom:11px;
+    background:var(--paper);border-radius:14px;padding:12px;
+    box-shadow:0 22px 50px -20px rgba(14,27,51,.55);
+    max-height:calc(var(--H) - 22px);overflow:auto;
+  }
+  .picker h3{margin:0 0 8px;font-size:11.5px;font-weight:700;color:var(--ink);letter-spacing:-.01em}
+  .picker .hint{font-size:10px;color:var(--muted);font-weight:500;margin-bottom:10px}
+  .picker .grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .picker button.cam{
+    appearance:none;cursor:pointer;font-family:inherit;
+    background:var(--cream);border:2px solid transparent;border-radius:10px;
+    padding:6px;display:flex;flex-direction:column;gap:5px;
+    color:var(--ink);text-align:left;
+  }
+  .picker button.cam:hover{border-color:var(--ink-soft)}
+  .picker button.cam.current{border-color:var(--green);background:var(--green-soft)}
+  .picker button.cam .pic{
+    width:100%;aspect-ratio:4/3;border-radius:6px;background:#0E1B33;overflow:hidden;
+  }
+  .picker button.cam .pic img{width:100%;height:100%;object-fit:cover;display:block}
+  .picker button.cam .nm{font-size:10px;font-weight:700;line-height:1.2;color:var(--ink);
+                         display:flex;justify-content:space-between;align-items:center;gap:4px}
+  .picker button.cam .nm small{font-size:9px;color:var(--muted);font-weight:600}
+  .picker .row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .picker .row .close{
+    appearance:none;cursor:pointer;background:transparent;border:none;
+    color:var(--muted);font-size:14px;font-weight:700;padding:2px 6px;border-radius:6px;
+  }
+  .picker .row .close:hover{background:var(--cream-2);color:var(--ink)}
+  .picker .empty{font-size:11px;color:var(--muted);text-align:center;padding:18px 0}
+  .picker .spin{
+    width:18px;height:18px;border:2px solid var(--cream-2);border-top-color:var(--ink);
+    border-radius:50%;animation:spin .8s linear infinite;margin:14px auto;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="brand">
+      <div class="logo">G</div>
+      <h1>Gaze Nailong</h1>
+    </div>
+    <span class="pulse" id="pulse"><span class="dot"></span><span id="state">…</span></span>
+    <button class="closebtn" onclick="shutdownApp()" aria-label="Quit" title="Quit">×</button>
+  </div>
+
+  <section class="hero" id="hero">
+    <div class="label">Attention</div>
+    <div class="num" id="pct">—<small>%</small></div>
+    <div class="sub" id="heroSub">60-second window</div>
+    <div class="ring"><i id="bar"></i></div>
+  </section>
+
+  <section class="preview">
+    <div class="thumb"><img src="/video" alt="" id="thumb"></div>
+    <div class="meta">
+      <b id="camName">camera —</b>
+      <span id="camDetail">probing…</span>
+    </div>
+    <button class="swap" onclick="openPicker()" title="Choose camera manually">Pick</button>
+  </section>
+
+  <div class="msg" id="msg"></div>
+
+  <section class="today">
+    <div class="s"><b id="tFocus">—<small>%</small></b><span>focus</span></div>
+    <div class="s"><b id="tMin">—<small>m</small></b><span>on task</span></div>
+    <div class="s"><b id="tDis">—</b><span>nudges</span></div>
+  </section>
+
+  <section class="acts">
+    <button class="ico" id="pauseBtn" data-tip="Pause" onclick="toggle()"><span class="glyph" id="pauseGlyph">⏸</span></button>
+    <button class="ico" data-tip="Recalibrate" onclick="ctrl('recalibrate')"><span class="glyph">↻</span></button>
+    <button class="ico" id="voiceBtn" data-tip="Voice" onclick="toggleVoice()"><span class="glyph" id="voiceGlyph">🔈</span></button>
+  </section>
+
+  <button class="cta" onclick="openDashboard()">Open dashboard <span>↗</span></button>
+
+  <div class="picker" id="picker" onclick="if(event.target===this) closePicker()">
+    <div class="sheet">
+      <div class="row">
+        <h3>Pick your camera</h3>
+        <button class="close" onclick="closePicker()" aria-label="Close">×</button>
+      </div>
+      <div class="hint">Tap the one that shows your face. The choice is saved.</div>
+      <div id="pickerBody"><div class="spin"></div></div>
+    </div>
+  </div>
+
+<script>
+let paused=false, voiceOn=false, lastCamIdx=null;
+function pretty(s){return (s||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
+async function ctrl(a){ try{ await fetch('/api/control/'+a,{method:'POST'}); }catch(e){} }
+async function toggle(){ await ctrl(paused?'resume':'pause'); }
+async function toggleVoice(){
+  try{ const r=await (await fetch('/api/voice/'+(voiceOn?'off':'on'),{method:'POST'})).json(); voiceOn=r.voice; renderVoice(); }catch(e){}
+}
+function renderVoice(){
+  document.getElementById('voiceGlyph').textContent = voiceOn?'🔊':'🔈';
+  const b = document.getElementById('voiceBtn');
+  b.classList.toggle('on',voiceOn);
+  b.setAttribute('data-tip', 'Voice '+(voiceOn?'on':'off'));
+}
+async function openDashboard(){
+  if(window.pywebview&&window.pywebview.api&&window.pywebview.api.open_dashboard){window.pywebview.api.open_dashboard();}
+  else{ try{ await fetch('/api/open-browser',{method:'POST'}); }catch(e){} }
+}
+
+async function poll(){
+  try{
+    const s = await (await fetch('/api/status')).json();
+    paused=s.paused; voiceOn=!!s.voice; renderVoice();
+
+    document.getElementById('pauseGlyph').textContent = paused?'▶':'⏸';
+    document.getElementById('pauseBtn').setAttribute('data-tip', paused?'Resume':'Pause');
+    document.getElementById('pauseBtn').classList.toggle('on', paused);
+
+    const stateText = s.no_camera?'no camera'
+      :(s.error?'error'
+      :(s.calibrating?'calibrating'
+      :(paused?'paused'
+      :pretty(s.state))));
+    document.getElementById('state').textContent = stateText;
+
+    const pulse = document.getElementById('pulse');
+    pulse.classList.remove('ok','warn','bad');
+    if(s.in_warning) pulse.classList.add('bad');
+    else if(s.focused) pulse.classList.add('ok');
+    else if(s.calibrating) pulse.classList.add('warn');
+
+    document.body.classList.toggle('alert', !!s.in_warning);
+
+    const att = (typeof s.attention === 'number')
+                  ? s.attention
+                  : Math.max(0, 1 - (s.bad_ratio||0));
+    const pct = Math.round(att*100);
+    const noFace = (s.state === 'no_face') || (s.face_found === false);
+    const showNum = !(s.calibrating || s.no_camera || noFace);
+    // The number hides during no-face; the bar keeps reflecting the (decaying)
+    // EWMA value so the user can see attention falling while they're away.
+    document.getElementById('pct').innerHTML =
+      showNum ? pct+'<small>%</small>' : '—<small></small>';
+    document.getElementById('bar').style.width =
+      ((s.calibrating || s.no_camera) ? 0 : pct) + '%';
+
+    document.getElementById('heroSub').textContent =
+      s.no_camera ? 'no camera'
+      : (s.calibrating ? 'learning baseline'
+      : (noFace ? 'no face — estimating in background'
+      : (s.in_warning ? 'drifted — refocus'
+      : (paused ? 'paused' : '60-second window'))));
+
+    document.getElementById('msg').textContent = s.message||'';
+
+    // Camera meta. NOTE: AVFoundation's name does NOT reliably correspond
+    // to the cv2 index on this Mac — so we don't warn based on name. The
+    // user verifies visually via the thumbnail; the Pick overlay is the
+    // escape if it's wrong.
+    const ci = s.camera_index;
+    const cr = s.camera_resolution;
+    document.getElementById('camName').textContent =
+      (ci == null) ? 'no camera' : ('Camera '+ci);
+    document.getElementById('camDetail').textContent =
+      (ci == null) ? '—'
+      : (cr ? cr+' · tap Pick if wrong' : 'tap Pick if wrong');
+    if(ci != null && ci !== lastCamIdx){
+      lastCamIdx = ci;
+      const t = document.getElementById('thumb');
+      t.src = '/video?cam='+ci+'&t='+Date.now();
+    }
+
+    if(s.today){
+      document.getElementById('tFocus').innerHTML = (s.today.avg_focused ?? '—')+'<small>%</small>';
+      document.getElementById('tMin').innerHTML   = (s.today.focused_minutes ?? '—')+'<small>m</small>';
+      document.getElementById('tDis').textContent = (s.today.distractions ?? '—');
+    }
+  }catch(e){ document.getElementById('state').textContent='offline'; }
+}
+
+/* ---- quit ---- */
+async function shutdownApp(){
+  try{ await fetch('/api/shutdown', {method:'POST'}); }catch(e){}
+  try{ window.close(); }catch(e){}
+}
+
+/* ---- camera picker ---- */
+async function openPicker(){
+  const p = document.getElementById('picker');
+  const body = document.getElementById('pickerBody');
+  body.innerHTML = '<div class="spin"></div>';
+  p.classList.add('open');
+  try{
+    const r = await (await fetch('/api/cameras/probe')).json();
+    renderPicker(r);
+  }catch(e){
+    body.innerHTML = '<div class="empty">Could not probe cameras.</div>';
+  }
+}
+function closePicker(){ document.getElementById('picker').classList.remove('open'); }
+function renderPicker(r){
+  const body = document.getElementById('pickerBody');
+  if(!r.cameras || !r.cameras.length){
+    body.innerHTML = '<div class="empty">No working cameras found.</div>';
+    return;
+  }
+  const html = ['<div class="grid">'];
+  for(const c of r.cameras){
+    const nm = c.name || ('Camera '+c.index);
+    const cls = c.current ? 'cam current' : 'cam';
+    html.push(
+      '<button class="'+cls+'" data-idx="'+c.index+'">'+
+        '<div class="pic"><img src="data:image/jpeg;base64,'+c.image+'" alt=""></div>'+
+        '<div class="nm">'+
+          '<span>'+escapeHtml(nm)+'</span>'+
+          '<small>['+c.index+']</small>'+
+        '</div>'+
+      '</button>'
+    );
+  }
+  html.push('</div>');
+  body.innerHTML = html.join('');
+  for(const btn of body.querySelectorAll('button.cam')){
+    btn.onclick = async () => {
+      const idx = parseInt(btn.dataset.idx, 10);
+      btn.style.opacity = .55;
+      try{
+        await fetch('/api/cameras/select',
+          {method:'POST', headers:{'Content-Type':'application/json'},
+           body: JSON.stringify({index: idx})});
+        closePicker();
+      }catch(e){ btn.style.opacity = 1; }
+    };
+  }
+}
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
+
+/* ---- compact floating widget: fixed size, anchored top-right ---- */
+const SIZE = { W: 294, H: 460, MARGIN: 18, TOP_GAP: 56 };
+function dock(){
+  try{
+    const aw = screen.availWidth  || screen.width  || 1440;
+    const ah = screen.availHeight || screen.height || 900;
+    const at = screen.availTop    || 0;
+    window.resizeTo(SIZE.W, SIZE.H);
+    window.moveTo(aw - SIZE.W - SIZE.MARGIN, at + SIZE.TOP_GAP);
+  }catch(e){}
+}
+function snapBack(){
+  try{
+    if(window.outerWidth !== SIZE.W || window.outerHeight !== SIZE.H){
+      window.resizeTo(SIZE.W, SIZE.H);
+    }
+  }catch(e){}
+}
+window.addEventListener('load', dock);
+setTimeout(dock, 250);
+setTimeout(dock, 600);
+window.addEventListener('resize', snapBack);
+// Polling snap covers any case where the resize event is throttled or
+// suppressed by the OS during an active drag — guarantees the window can
+// never be sized to anything other than W × H.
+setInterval(snapBack, 180);
+
+poll(); setInterval(poll, 1000);
+</script>
+</body>
+</html>

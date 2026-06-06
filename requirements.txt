@@ -1,0 +1,25 @@
+# Core detection (shared with the Orange Pi build)
+opencv-python>=4.8
+mediapipe>=0.10
+numpy>=1.24
+
+# Desktop dashboard
+flask>=3.0
+
+# Sidebar window (default UI). On macOS pywebview uses the built-in WebKit;
+# on Windows it uses Edge WebView2; on Linux it needs PyGObject + WebKit2.
+pywebview>=4.4
+
+# Optional menu-bar / tray mode (python app.py --tray)
+pystray>=0.19
+pillow>=10.0
+
+# Text-to-speech (cross-platform). On Linux you can instead install the
+# system package espeak-ng and skip pyttsx3.
+pyttsx3>=2.90
+
+# macOS only — used to enumerate cameras via AVFoundation (the same API
+# OpenCV uses on macOS 14+), so we can reliably skip Continuity Camera
+# (iPhone-as-webcam). Without it we fall back to ffmpeg/system_profiler,
+# which lie when Continuity is active.
+pyobjc-framework-AVFoundation>=10.0; sys_platform == "darwin"
