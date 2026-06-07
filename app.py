@@ -2,8 +2,8 @@
 """Gaze Nailong — native macOS app.
 
 Runs the camera + analysis loop in the background and presents the UI inside
-a native WKWebView window. No browser launches, no localhost server, no
-Flask — everything ships inside a single .app bundle.
+a native WKWebView window. Everything ships inside a single .app bundle —
+no browser launches and no HTTP server.
 
 UI ↔ Python communication is direct:
   * JS calls Python via pywebview's js_api bridge (see gaze/bridge.py).
@@ -18,7 +18,13 @@ import sys
 import threading
 import time
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+# When frozen by PyInstaller, datas (HTML, warning.wav) are unpacked under
+# sys._MEIPASS. In source mode they sit next to this file. Either way BASE
+# is the directory that contains "gaze/" and "warning.wav".
+if getattr(sys, "frozen", False):
+    BASE = sys._MEIPASS
+else:
+    BASE = os.path.dirname(os.path.abspath(__file__))
 GAZE_DIR = os.path.join(BASE, "gaze")
 
 

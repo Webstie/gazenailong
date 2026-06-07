@@ -1,0 +1,17 @@
+# PyInstaller artifacts
+build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Runtime state (lives in ~/.gazenailong but ignore if anyone symlinks it in)
+*.db
+*.db-journal
+
+# IDE
+.DS_Store

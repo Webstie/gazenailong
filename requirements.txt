@@ -8,8 +8,12 @@ numpy>=1.24
 # communicates with Python through the js_api bridge in gaze/bridge.py.
 pywebview>=4.4
 
-# Text-to-speech (cross-platform). On Linux you can instead install the
-# system package espeak-ng and skip pyttsx3.
+# Text-to-speech.
+# edge-tts gives us free, key-less access to Microsoft Azure Neural voices
+# (Ava, Andrew, Emma, Brian — the same set Copilot Voice uses). It's the
+# default backend on macOS; pyttsx3 / native `say` remain as the offline
+# fallback.
+edge-tts>=6.1
 pyttsx3>=2.90
 
 # macOS only — used to enumerate cameras via AVFoundation (the same API

@@ -156,8 +156,11 @@ class FFmpegCamera:
         return self._proc.poll() is None
 
     def read(self, *_args, **_kw):
-        # Block briefly until we have a first frame, then return latest.
-        deadline = time.time() + 3.0
+        # Block until we have a first frame, then return latest. The 8s
+        # deadline is for the cold-start case (camera warming up, TCC dialog
+        # just dismissed); once frames are streaming `_latest` is always set
+        # and read() returns immediately, so this doesn't slow the hot path.
+        deadline = time.time() + 8.0
         while time.time() < deadline:
             with self._lock:
                 if self._latest is not None:

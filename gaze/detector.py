@@ -292,6 +292,82 @@ def camera_name(i):
     return inv[i] if 0 <= i < len(inv) else None
 
 
+# AVAuthorizationStatus enum values (AVFoundation):
+#   0 = NotDetermined, 1 = Restricted, 2 = Denied, 3 = Authorized
+_AV_AUTH_NOT_DETERMINED = 0
+_AV_AUTH_RESTRICTED = 1
+_AV_AUTH_DENIED = 2
+_AV_AUTH_AUTHORIZED = 3
+
+
+def request_camera_permission(timeout=60.0):
+    """Synchronously request camera permission on macOS.
+
+    Fix for the first-launch failure: on a fresh install, cv2/ffmpeg open the
+    camera while macOS is still showing the TCC permission dialog. The open
+    call returns instantly (no frames), the monitor gives up, and only the
+    *second* launch — after permission has been granted — works. By calling
+    requestAccessForMediaType_completionHandler_ up front, we block the
+    monitor thread until the user actually clicks Allow / Deny, so the
+    subsequent open call is guaranteed to be made with a settled permission.
+
+    Returns True if permission is granted (or non-macOS, or PyObjC missing);
+    False if the user denied / system restricted access.
+    """
+    if sys.platform != "darwin":
+        return True
+    try:
+        from AVFoundation import AVCaptureDevice
+    except Exception:
+        log.warning("PyObjC AVFoundation unavailable; skipping permission "
+                    "request and hoping for the best.")
+        return True
+
+    try:
+        status = int(AVCaptureDevice.authorizationStatusForMediaType_("vide"))
+    except Exception:
+        log.exception("authorizationStatusForMediaType_ failed; "
+                      "assuming permission granted.")
+        return True
+
+    if status == _AV_AUTH_AUTHORIZED:
+        log.info("Camera permission already granted.")
+        return True
+    if status in (_AV_AUTH_RESTRICTED, _AV_AUTH_DENIED):
+        log.error("Camera permission denied/restricted (status=%d). The user "
+                  "must enable Gaze Nailong under System Settings → Privacy "
+                  "& Security → Camera, then reopen the app.", status)
+        return False
+
+    log.info("Camera permission status=notDetermined — prompting user and "
+             "blocking the monitor thread until they respond.")
+
+    import threading as _t
+    done = _t.Event()
+    result = {"granted": False}
+
+    def _handler(granted):
+        result["granted"] = bool(granted)
+        done.set()
+
+    try:
+        AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+            "vide", _handler)
+    except Exception:
+        log.exception("requestAccessForMediaType_completionHandler_ raised; "
+                      "falling back to optimistic 'granted'.")
+        return True
+
+    if not done.wait(timeout=timeout):
+        log.warning("Camera permission prompt did not return within %.1fs.",
+                    timeout)
+        return False
+
+    log.info("Camera permission %s by user.",
+             "granted" if result["granted"] else "denied")
+    return result["granted"]
+
+
 def _env_forced_camera_index():
     """GAZE_CAMERA_INDEX=N forces a specific cv2 index. Wins over everything,
     including the blocked list — so users can re-enable the iPhone explicitly."""

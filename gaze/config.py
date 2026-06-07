@@ -62,15 +62,20 @@ CONTINUOUS_SCORING = True
 FOCUS_WINDOW_SECONDS = 60.0      # still used by the binary fallback path
 ATTENTION_FULL_RATIO = 0.667     # EWMA value that maps to 100% attention
 
-# Inner EWMA on the per-frame soft score. α = ln(2) / (t_half * fps). At
-# 30 fps with t_half = 300 s (5 min) → α ≈ 7.7e-5. That gives:
-#   * half-life       ≈ 5 min   (drift 5 min ago → 50% weight now)
-#   * time constant τ ≈ 7.2 min
-#   * equivalent SMA  ≈ 14.4 min
-# The gauge reflects sustained focus over a real work session rather than
-# punishing every glance. Warnings use the separate, shorter EWMA below so
-# they can still fire after a couple of minutes of acute distraction.
-INNER_EWMA_ALPHA = 0.0000770
+# Inner EWMA on the per-frame soft score. α = ln(2) / (t_half * fps). The
+# monitor loop targets 20 fps; with t_half = 15 s → α ≈ 2.31e-3. That gives:
+#   * half-life       ≈ 15 s   (a real distraction shows on the gauge within
+#                                ~10-20 s — what the user actually expects
+#                                from a focus indicator)
+#   * brief glances   ≈ still saturated at 100 % thanks to ATTENTION_FULL_RATIO
+#     (a 1-3 s glance only drops the inner score to ~0.87-0.96, well above
+#     the 0.667 saturation floor)
+#   * recovery        ≈ symmetric, returns to 100 % within ~20-30 s of focus
+# This used to be 7.7e-5 (5-min half-life) which created a ~3-minute dead-zone
+# at the top of the gauge — the percentage looked stuck at 100 % no matter
+# what the user did. Warnings still use the separate WARN_INNER_EWMA_ALPHA
+# below so escalation timing is unaffected.
+INNER_EWMA_ALPHA = 0.00231
 
 # Shorter EWMA used ONLY by the warning state machine. 60 s half-life at
 # 30 fps → α = ln(2)/(60*30) ≈ 3.85e-4. With ATTENTION_FULL_RATIO = 0.667
@@ -129,7 +134,3 @@ ALERT_MIN_INTERVAL_TIER3 = 25.0
 
 # -------- Behavior logging --------
 SAMPLE_LOG_INTERVAL = 5.0    # seconds between focus-ratio samples written to DB
-
-# -------- Dashboard server --------
-SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 8733

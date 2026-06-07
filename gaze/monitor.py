@@ -24,6 +24,7 @@ from . import config as C
 from .detector import (GazeAnalyzer, WarningController, FocusState,
                        open_camera, open_camera_index,
                        blocked_camera_indices, refresh_camera_inventory,
+                       request_camera_permission,
                        camera_name as _camera_name_lookup)
 from .audio import AudioManager
 from .storage import Store, DB_DIR
@@ -220,6 +221,19 @@ class Monitor:
         self._save_settings()
         return self._voice
 
+    # ---------- voice picker (sidebar) ----------
+    def list_voices(self):
+        return self._audio.list_english_voices()
+
+    def preview_voice(self, name, text=None):
+        return self._audio.preview_voice(name, text)
+
+    def set_voice_name(self, name):
+        return self._audio.apply_voice(name)
+
+    def voice_name(self):
+        return getattr(self._audio, "voice_name", None)
+
     def toggle(self):
         if self._paused.is_set():
             self.resume()
@@ -392,6 +406,21 @@ class Monitor:
         self._set(camera_name=name, camera_resolution=res)
 
     def _run_inner(self):
+        # macOS first-launch fix: block until the user has actually answered
+        # the camera permission prompt. Without this, cv2/ffmpeg open the
+        # device while the TCC dialog is still on screen, the open returns
+        # instantly with no frames, and the app gives up before the user can
+        # click Allow — which is why the first run after install used to be a
+        # dud and only the second run "worked".
+        self._set(message="Waiting for camera permission…")
+        if not request_camera_permission():
+            self._set(running=False, no_camera=True, state="no_camera",
+                      message="Camera access is off. Enable it under "
+                              "System Settings → Privacy & Security → "
+                              "Camera, then reopen Gaze Nailong.")
+            return
+        self._set(message="")
+
         self._cap, self._cam_index = open_camera(self._cam_index)
         if self._cap is None:
             self._set(running=False, no_camera=True, state="no_camera",

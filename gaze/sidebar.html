@@ -291,6 +291,38 @@
     border-radius:50%;animation:spin .8s linear infinite;margin:14px auto;
   }
   @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---- voice picker rows ---- */
+  .vrow{
+    display:flex;align-items:center;gap:7px;
+    padding:7px 9px;background:var(--cream);border:2px solid transparent;
+    border-radius:9px;cursor:pointer;margin-bottom:5px;
+  }
+  .vrow:hover{border-color:var(--ink-soft)}
+  .vrow.current{border-color:var(--green);background:var(--green-soft)}
+  .vrow .nm{
+    flex:1;font-size:10.5px;font-weight:700;color:var(--ink);min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.01em;
+  }
+  .vrow .badge{
+    font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+    padding:2px 5px;border-radius:5px;color:var(--muted);background:var(--cream-2);
+    flex:none;
+  }
+  .vrow .badge.ai{
+    background:linear-gradient(135deg,#7c3aed 0%,#2563eb 100%);
+    color:#fff;letter-spacing:.08em;
+  }
+  .vrow .badge.premium{background:#0E1B33;color:#F4EEDF}
+  .vrow .badge.enhanced{background:var(--ink-soft);color:#F4EEDF}
+  .vrow .badge.neural{background:var(--green);color:#fff}
+  .vrow .play{
+    flex:none;width:26px;height:26px;border-radius:7px;
+    background:var(--paper);border:1px solid var(--line);
+    display:grid;place-items:center;font-size:10px;cursor:pointer;
+    appearance:none;font-family:inherit;color:var(--ink);
+  }
+  .vrow .play:hover{background:var(--ink);color:#F4EEDF;border-color:var(--ink)}
 </style>
 </head>
 <body>
@@ -331,6 +363,7 @@
     <button class="ico" id="pauseBtn" data-tip="Pause" onclick="toggle()"><span class="glyph" id="pauseGlyph">⏸</span></button>
     <button class="ico" data-tip="Recalibrate" onclick="ctrlRecalibrate()"><span class="glyph">↻</span></button>
     <button class="ico" id="voiceBtn" data-tip="Voice" onclick="toggleVoice()"><span class="glyph" id="voiceGlyph">🔈</span></button>
+    <button class="ico" data-tip="Pick voice" onclick="openVoicePicker()"><span class="glyph">🗣</span></button>
   </section>
 
   <section class="assess" id="assess">
@@ -348,6 +381,17 @@
       </div>
       <div class="hint">Tap the one that shows your face. The choice is saved.</div>
       <div id="pickerBody"><div class="spin"></div></div>
+    </div>
+  </div>
+
+  <div class="picker" id="voicePicker" onclick="if(event.target===this) closeVoicePicker()">
+    <div class="sheet">
+      <div class="row">
+        <h3>Pick a voice</h3>
+        <button class="close" onclick="closeVoicePicker()" aria-label="Close">×</button>
+      </div>
+      <div class="hint">Tap ▶ to preview. Tap a row to use it. Your choice is saved.</div>
+      <div id="voicePickerBody"><div class="spin"></div></div>
     </div>
   </div>
 
@@ -595,6 +639,67 @@ function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c => (
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
   ));
+}
+
+/* ---- voice picker ---- */
+async function openVoicePicker(){
+  const p = document.getElementById('voicePicker');
+  const body = document.getElementById('voicePickerBody');
+  body.innerHTML = '<div class="spin"></div>';
+  p.classList.add('open');
+  const a = api(); if(!a){ body.innerHTML = '<div class="empty">No bridge.</div>'; return; }
+  try{
+    const [voices, current] = await Promise.all([
+      a.voices_list(),
+      a.voice_current(),
+    ]);
+    renderVoicePicker(voices, current);
+  }catch(e){
+    body.innerHTML = '<div class="empty">Could not list voices.</div>';
+  }
+}
+function closeVoicePicker(){ document.getElementById('voicePicker').classList.remove('open'); }
+function renderVoicePicker(voices, current){
+  const body = document.getElementById('voicePickerBody');
+  if(!voices || !voices.length){
+    body.innerHTML = '<div class="empty">No English voices found on this Mac.</div>';
+    return;
+  }
+  const labelOf = q => ({ai:'AI', premium:'Premium', enhanced:'Enhanced',
+                          neural:'Neural', standard:'Standard'})[q] || q;
+  const html = [];
+  for(const v of voices){
+    const cls = (current && v.id === current) ? 'vrow current' : 'vrow';
+    html.push(
+      '<div class="'+cls+'" data-id="'+escapeHtml(v.id)+'">'+
+        '<button class="play" data-id="'+escapeHtml(v.id)+'" aria-label="Preview" title="Preview">▶</button>'+
+        '<div class="nm">'+escapeHtml(v.name)+'</div>'+
+        '<span class="badge '+v.quality+'">'+labelOf(v.quality)+'</span>'+
+      '</div>'
+    );
+  }
+  body.innerHTML = html.join('');
+  for(const row of body.querySelectorAll('.vrow')){
+    row.onclick = async (ev) => {
+      // Clicks on the preview button are handled separately.
+      if(ev.target.closest('button.play')) return;
+      const id = row.dataset.id;
+      row.style.opacity = .55;
+      const a = api(); if(!a){ row.style.opacity = 1; return; }
+      try{
+        await a.voice_set(id);
+        closeVoicePicker();
+      }catch(e){ row.style.opacity = 1; }
+    };
+  }
+  for(const pb of body.querySelectorAll('button.play')){
+    pb.onclick = async (ev) => {
+      ev.stopPropagation();
+      const id = pb.dataset.id;
+      const a = api(); if(!a) return;
+      try{ await a.voice_preview(id); }catch(e){}
+    };
+  }
 }
 
 /* Window sizing/position is now owned by the host pywebview window — no

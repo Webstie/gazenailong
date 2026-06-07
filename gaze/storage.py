@@ -48,8 +48,8 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
 
 class Store:
     """Thread-safe wrapper. The monitor writes from its worker thread while
-    the Flask server reads from request threads, so we serialise with a lock
-    and open the connection with check_same_thread=False."""
+    the pywebview bridge reads from its js_api dispatch thread, so we
+    serialise with a lock and open the connection with check_same_thread=False."""
 
     def __init__(self, path=DB_PATH):
         os.makedirs(os.path.dirname(path), exist_ok=True)

@@ -1,9 +1,8 @@
 """JS-callable bridge exposed to the pywebview window.
 
-Replaces the old gaze/server.py Flask routes. Each method here is what the
-front-end calls as `pywebview.api.<name>(...)`. There is no HTTP, no
-localhost socket, no browser — the WebView and Python share the same process
-and pywebview marshals calls + JSON-serialises return values automatically.
+Each method here is what the front-end calls as `pywebview.api.<name>(...)`.
+The WebView and Python share the same process; pywebview marshals calls and
+JSON-serialises return values automatically.
 """
 
 import base64
@@ -66,6 +65,25 @@ class Bridge:
 
     def set_voice(self, on):
         return self._m.set_voice(bool(on))
+
+    # ---------- voice picker ----------
+    def voices_list(self):
+        return self._m.list_voices()
+
+    def voice_current(self):
+        return self._m.voice_name()
+
+    def voice_preview(self, name):
+        try:
+            return bool(self._m.preview_voice(str(name)))
+        except Exception:
+            return False
+
+    def voice_set(self, name):
+        try:
+            return self._m.set_voice_name(str(name))
+        except Exception:
+            return None
 
     def set_camera_index(self, idx):
         try:
