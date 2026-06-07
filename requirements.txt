@@ -3,16 +3,10 @@ opencv-python>=4.8
 mediapipe>=0.10
 numpy>=1.24
 
-# Desktop dashboard
-flask>=3.0
-
-# Sidebar window (default UI). On macOS pywebview uses the built-in WebKit;
-# on Windows it uses Edge WebView2; on Linux it needs PyGObject + WebKit2.
+# Native app shell — WKWebView on macOS, no browser, no HTTP server.
+# The UI loads embedded HTML directly via pywebview's html= parameter and
+# communicates with Python through the js_api bridge in gaze/bridge.py.
 pywebview>=4.4
-
-# Optional menu-bar / tray mode (python app.py --tray)
-pystray>=0.19
-pillow>=10.0
 
 # Text-to-speech (cross-platform). On Linux you can instead install the
 # system package espeak-ng and skip pyttsx3.
@@ -21,5 +15,6 @@ pyttsx3>=2.90
 # macOS only — used to enumerate cameras via AVFoundation (the same API
 # OpenCV uses on macOS 14+), so we can reliably skip Continuity Camera
 # (iPhone-as-webcam). Without it we fall back to ffmpeg/system_profiler,
-# which lie when Continuity is active.
+# which lie when Continuity is active. PyObjC's Cocoa + WebKit frameworks
+# are pulled in transitively by pywebview on macOS.
 pyobjc-framework-AVFoundation>=10.0; sys_platform == "darwin"

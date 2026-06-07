@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Focus Session Report — Gaze Nailong</title>
+<style>
+  :root{
+    --cream:#F2EEE5;
+    --cream-2:#EAE4D6;
+    --paper:#FFFFFF;
+    --ink:#0E1B33;
+    --ink-soft:#243353;
+    --muted:#7A8194;
+    --line:rgba(14,27,51,.08);
+    --line-strong:rgba(14,27,51,.14);
+    --green:#15B886;
+    --green-soft:#D7F2E6;
+    --orange:#F1A33F;
+    --orange-soft:#FBE6CA;
+    --red:#E5564E;
+    --red-soft:#F7D6D3;
+    --blue:#5B8DEF;
+    --blue-soft:#D8E4FA;
+    --shadow:0 14px 28px -22px rgba(14,27,51,.45), 0 1px 3px -1px rgba(14,27,51,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--cream);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    font-feature-settings:"tnum" 1, "lnum" 1;
+  }
+  .page{
+    max-width:840px;
+    margin:0 auto;
+    padding:40px 36px 60px;
+  }
+  .toolbar{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:24px;gap:12px;
+  }
+  .toolbar .brand{
+    display:flex;align-items:center;gap:9px;
+    font-size:13px;font-weight:600;color:var(--muted);
+  }
+  .toolbar .brand .logo{
+    width:22px;height:22px;border-radius:7px;
+    background:linear-gradient(135deg,var(--ink) 0%,#1f3464 100%);
+    display:grid;place-items:center;color:#F2EEE5;font-weight:800;font-size:11px;
+  }
+  .toolbar .actions{display:flex;gap:8px}
+  .toolbar button{
+    appearance:none;cursor:pointer;font-family:inherit;
+    background:var(--ink);color:#F4EEDF;
+    border:none;border-radius:10px;padding:9px 14px;
+    font-size:12px;font-weight:700;letter-spacing:.01em;
+    box-shadow:0 10px 22px -12px rgba(14,27,51,.55);
+  }
+  .toolbar button.ghost{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
+  .toolbar button:hover{filter:brightness(1.05)}
+
+  h1{
+    font-size:28px;font-weight:800;letter-spacing:-.02em;margin:0 0 4px;
+  }
+  .subhead{font-size:13px;color:var(--muted);font-weight:500;margin-bottom:28px}
+  .subhead .tag{
+    display:inline-block;margin-left:8px;font-size:10.5px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.08em;
+    padding:2px 8px;border-radius:999px;background:var(--orange-soft);color:#8a5a16;
+  }
+
+  .hero{
+    display:grid;grid-template-columns:1.1fr 1fr;gap:16px;margin-bottom:18px;
+  }
+  .hero .big{
+    background:linear-gradient(180deg,#FBF8F1 0%,#6B7BA0 55%,#0E1B33 100%);
+    color:#F4EEDF;border-radius:18px;padding:24px;box-shadow:var(--shadow);
+    position:relative;overflow:hidden;
+  }
+  .hero .big::after{
+    content:"";position:absolute;inset:auto -25% -45% auto;width:220px;height:220px;
+    border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,.16), rgba(255,255,255,0) 60%);
+  }
+  .hero .big .label{
+    font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:rgba(244,238,223,.7);font-weight:700;
+  }
+  .hero .big .num{
+    font-size:78px;font-weight:800;letter-spacing:-.03em;line-height:1;margin-top:6px;
+  }
+  .hero .big .num small{font-size:28px;font-weight:600;opacity:.8;margin-left:4px}
+  .hero .big .sub{margin-top:8px;font-size:13px;color:rgba(244,238,223,.75);font-weight:500}
+  .hero .stats{
+    display:grid;grid-template-columns:1fr 1fr;gap:10px;
+  }
+  .stat{
+    background:var(--paper);border:1px solid var(--line);border-radius:14px;
+    padding:14px 16px;box-shadow:var(--shadow);
+  }
+  .stat .v{font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.05}
+  .stat .v small{font-size:12px;font-weight:600;color:var(--muted);margin-left:3px}
+  .stat .k{
+    font-size:10px;font-weight:700;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.08em;margin-top:4px;
+  }
+
+  .card{
+    background:var(--paper);border:1px solid var(--line);border-radius:16px;
+    padding:18px 20px;box-shadow:var(--shadow);margin-bottom:14px;
+  }
+  .card h2{
+    font-size:13px;font-weight:700;letter-spacing:-.01em;margin:0 0 12px;color:var(--ink-soft);
+    text-transform:uppercase;letter-spacing:.06em;font-size:11px;
+  }
+
+  /* chart */
+  .chart-wrap{width:100%;overflow:hidden}
+  .chart svg{display:block;width:100%;height:auto}
+  .chart .gridline{stroke:var(--line);stroke-width:1}
+  .chart .axisline{stroke:var(--line-strong);stroke-width:1}
+  .chart .axislabel{font-size:9.5px;fill:var(--muted);font-weight:600}
+  .chart .area{fill:rgba(21,184,134,.13)}
+  .chart .line{fill:none;stroke:var(--green);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+  .chart .threshold{stroke:var(--orange);stroke-width:1;stroke-dasharray:4 4;opacity:.6}
+
+  /* breakdown */
+  .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px}
+  .bar-row .nm{width:120px;font-weight:600;color:var(--ink-soft);text-transform:capitalize}
+  .bar-row .bar{flex:1;height:10px;border-radius:999px;background:var(--cream-2);overflow:hidden}
+  .bar-row .bar i{display:block;height:100%;border-radius:999px}
+  .bar-row .v{width:80px;text-align:right;font-weight:700;color:var(--ink);font-feature-settings:"tnum" 1}
+  .bar-row .v small{color:var(--muted);font-weight:500;margin-left:2px}
+  .bar-drowsy   { background:var(--blue) !important }
+  .bar-looking_away { background:var(--orange) !important }
+  .bar-head_turned  { background:var(--red) !important }
+  .bar-no_face { background:var(--muted) !important }
+
+  .empty{font-size:12px;color:var(--muted);font-style:italic;padding:4px 0}
+
+  .footer{
+    margin-top:28px;text-align:center;font-size:11px;color:var(--muted);
+  }
+
+  /* ---------- print ---------- */
+  @media print{
+    @page{ size: Letter; margin: 0.5in }
+    body{background:#fff}
+    .toolbar{display:none}
+    .page{padding:0;max-width:none}
+    .card, .stat, .hero .big{
+      box-shadow:none !important;
+      border:1px solid #ccc !important;
+    }
+    .hero .big{
+      background:#f5f5f5 !important;
+      color:#0E1B33 !important;
+      border:1px solid #ccc !important;
+    }
+    .hero .big .label, .hero .big .sub{color:#666 !important}
+    .hero .big::after{display:none}
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div class="brand"><span class="logo">G</span><span>Gaze Nailong · Focus Session Report</span></div>
+      <div class="actions">
+        <button class="ghost" onclick="window.close()">Close</button>
+        <button onclick="window.print()">Download PDF</button>
+      </div>
+    </div>
+
+    <h1 id="title">Focus Session</h1>
+    <div class="subhead" id="subhead">—</div>
+
+    <div class="hero">
+      <div class="big">
+        <div class="label">Average attention</div>
+        <div class="num" id="avgFocused">—<small>%</small></div>
+        <div class="sub" id="avgSub">across the session</div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="v" id="focusedMin">—<small>min</small></div><div class="k">Time on task</div></div>
+        <div class="stat"><div class="v" id="distractedMin">—<small>min</small></div><div class="k">Time distracted</div></div>
+        <div class="stat"><div class="v" id="longestRun">—<small>min</small></div><div class="k">Longest focused stretch</div></div>
+        <div class="stat"><div class="v" id="eventCount">—</div><div class="k">Distraction episodes</div></div>
+      </div>
+    </div>
+
+    <section class="card">
+      <h2>Attention over time</h2>
+      <div class="chart chart-wrap" id="chartWrap">
+        <div class="empty">No samples were recorded.</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>What pulled your attention</h2>
+      <div id="breakdown"><div class="empty">No distractions recorded — clean session.</div></div>
+    </section>
+
+    <div class="footer" id="footer">Generated by Gaze Nailong</div>
+  </div>
+
+<script>
+function qs(name){ return new URLSearchParams(location.search).get(name); }
+function fmtDuration(sec){
+  sec = Math.max(0, Math.round(sec));
+  const m = Math.floor(sec/60), s = sec%60;
+  if(m === 0) return s + 's';
+  if(s === 0) return m + ' min';
+  return m + ' min ' + s + 's';
+}
+function fmtDate(ts){
+  if(!ts) return '';
+  const d = new Date(ts*1000);
+  return d.toLocaleString(undefined, {
+    weekday:'long', month:'long', day:'numeric',
+    hour:'numeric', minute:'2-digit'
+  });
+}
+function prettyState(s){
+  return (s||'').replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase());
+}
+
+function renderChart(timeline, durationSec){
+  const wrap = document.getElementById('chartWrap');
+  if(!timeline || timeline.length < 2){
+    wrap.innerHTML = '<div class="empty">Not enough samples for a chart.</div>';
+    return;
+  }
+  // Coordinate system: 0..W horizontally = 0..durationSec, 0..H vertically = 100..0%
+  const W = 760, H = 220, PADL = 36, PADR = 12, PADT = 8, PADB = 26;
+  const xMax = durationSec || timeline[timeline.length-1].t || 1;
+  function xFor(t){ return PADL + (t / xMax) * (W - PADL - PADR); }
+  function yFor(f){ return PADT + (1 - f) * (H - PADT - PADB); }
+
+  // Path for the focused line + area.
+  let line = '', area = '';
+  timeline.forEach((p, i) => {
+    const x = xFor(p.t), y = yFor(p.f);
+    line += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+  });
+  area = line + 'L' + xFor(timeline[timeline.length-1].t).toFixed(1)
+              + ' ' + yFor(0).toFixed(1) + ' L' + xFor(timeline[0].t).toFixed(1)
+              + ' ' + yFor(0).toFixed(1) + ' Z';
+
+  // Y gridlines + labels (0, 50, 100%)
+  let grid = '';
+  [0, 0.5, 1].forEach(g => {
+    const y = yFor(g).toFixed(1);
+    grid += `<line class="gridline" x1="${PADL}" x2="${W-PADR}" y1="${y}" y2="${y}"/>`;
+    grid += `<text class="axislabel" x="${PADL-6}" y="${(+y)+3.5}" text-anchor="end">${Math.round(g*100)}%</text>`;
+  });
+  // Threshold line at 40% (warning floor)
+  const thY = yFor(0.4).toFixed(1);
+  grid += `<line class="threshold" x1="${PADL}" x2="${W-PADR}" y1="${thY}" y2="${thY}"/>`;
+
+  // X tick labels — roughly 5 evenly-spaced marks in minutes.
+  const ticks = 5;
+  for(let i = 0; i <= ticks; i++){
+    const tSec = (xMax * i) / ticks;
+    const x = xFor(tSec).toFixed(1);
+    const label = (tSec >= 60) ? (Math.round(tSec/60) + 'm') : (Math.round(tSec) + 's');
+    grid += `<line class="gridline" x1="${x}" x2="${x}" y1="${yFor(1).toFixed(1)}" y2="${yFor(0).toFixed(1)}" opacity="0.4"/>`;
+    grid += `<text class="axislabel" x="${x}" y="${H-PADB+15}" text-anchor="middle">${label}</text>`;
+  }
+
+  wrap.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"
+         xmlns="http://www.w3.org/2000/svg">
+      ${grid}
+      <line class="axisline" x1="${PADL}" x2="${PADL}" y1="${PADT}" y2="${H-PADB}"/>
+      <line class="axisline" x1="${PADL}" x2="${W-PADR}" y1="${H-PADB}" y2="${H-PADB}"/>
+      <path class="area" d="${area}"/>
+      <path class="line" d="${line}"/>
+    </svg>
+  `;
+}
+
+function renderBreakdown(breakdown){
+  const el = document.getElementById('breakdown');
+  const types = Object.keys(breakdown || {});
+  if(!types.length){
+    el.innerHTML = '<div class="empty">No distractions recorded — clean session.</div>';
+    return;
+  }
+  // Sort by total seconds descending.
+  types.sort((a,b) => (breakdown[b].seconds||0) - (breakdown[a].seconds||0));
+  const maxSec = Math.max(1, ...types.map(t => breakdown[t].seconds || 0));
+  const rows = types.map(t => {
+    const b = breakdown[t];
+    const pct = ((b.seconds||0) / maxSec) * 100;
+    return `
+      <div class="bar-row">
+        <div class="nm">${prettyState(t)}</div>
+        <div class="bar"><i class="bar-${t}" style="width:${pct.toFixed(1)}%"></i></div>
+        <div class="v">${b.minutes.toFixed(1)}<small>min · ${b.count}×</small></div>
+      </div>
+    `;
+  });
+  el.innerHTML = rows.join('');
+}
+
+/* The host (app.py) creates this window without a query string and then
+   pushes the session id by setting window.__sessionId and calling
+   loadReport() through evaluate_js. We expose loadReport globally so the
+   host can re-trigger it once pywebview.api is ready. */
+window.loadReport = load;
+
+async function load(){
+  // Two ways the session id can arrive: query string (browser preview /
+  // debug) or window.__sessionId (the host injects it after spawning).
+  let sid = qs('session') || window.__sessionId;
+  if(!sid){
+    // Wait briefly in case the host hasn't pushed it yet.
+    await new Promise(r => setTimeout(r, 150));
+    sid = qs('session') || window.__sessionId;
+  }
+  if(!sid){
+    document.getElementById('title').textContent = 'Missing session id';
+    return;
+  }
+  // Wait for the pywebview bridge.
+  for(let i = 0; i < 40 && !(window.pywebview && window.pywebview.api); i++){
+    await new Promise(r => setTimeout(r, 50));
+  }
+  let r;
+  try{
+    if(window.pywebview && window.pywebview.api){
+      r = await window.pywebview.api.assessment_report(parseInt(sid, 10));
+    }
+    if(!r){ throw new Error('not found'); }
+  }catch(e){
+    document.getElementById('title').textContent = 'Could not load report';
+    document.getElementById('subhead').textContent = String(e);
+    return;
+  }
+
+  const dur = r.duration_sec || 0;
+  const tgt = r.target_sec || 0;
+  document.getElementById('title').textContent =
+    (tgt ? (Math.round(tgt/60) + '-minute focus session') : 'Focus Session');
+  const tag = r.ended_early
+    ? '<span class="tag">Ended early</span>'
+    : (r.kind === 'assessment' ? '<span class="tag" style="background:var(--green-soft);color:#0e7752">Completed</span>' : '');
+  document.getElementById('subhead').innerHTML =
+    fmtDate(r.start_ts) + ' · ' + fmtDuration(dur) +
+    (tgt ? (' / target ' + fmtDuration(tgt)) : '') + ' ' + tag;
+
+  document.getElementById('avgFocused').innerHTML =
+    (r.avg_focused ?? 0).toFixed(0) + '<small>%</small>';
+  document.getElementById('avgSub').textContent =
+    r.sample_count + ' samples · one every 5 seconds';
+  document.getElementById('focusedMin').innerHTML =
+    (r.focused_minutes ?? 0).toFixed(1) + '<small>min</small>';
+  document.getElementById('distractedMin').innerHTML =
+    (r.distracted_minutes ?? 0).toFixed(1) + '<small>min</small>';
+  document.getElementById('longestRun').innerHTML =
+    (r.longest_focused_minutes ?? 0).toFixed(1) + '<small>min</small>';
+  document.getElementById('eventCount').textContent = (r.event_count ?? 0);
+
+  renderChart(r.timeline || [], dur);
+  renderBreakdown(r.breakdown || {});
+
+  document.getElementById('footer').textContent =
+    'Generated by Gaze Nailong · ' + new Date().toLocaleString();
+  document.title = 'Focus Report · ' + fmtDate(r.start_ts);
+}
+load();
+</script>
+</body>
+</html>

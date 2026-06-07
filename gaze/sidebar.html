@@ -4,12 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gaze Nailong</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --W:294px; --H:460px;
+    --W:294px; --H:410px;
     --cream:#F2EEE5;
     --cream-2:#EAE4D6;
     --paper:#FFFFFF;
@@ -29,7 +26,7 @@
   html,body{margin:0;overflow:hidden}
   html,body{width:var(--W);height:var(--H);max-width:var(--W);max-height:var(--H)}
   body{
-    font-family:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     background:var(--cream);
     color:var(--ink);
     padding:11px;
@@ -189,6 +186,39 @@
   }
   button.ico[data-tip]:hover::after{opacity:1}
 
+  /* ---- timed assessment row ---- */
+  .assess{
+    background:var(--paper);border:1px solid var(--line);
+    border-radius:11px;padding:6px 8px;display:flex;align-items:center;gap:6px;
+    box-shadow:var(--shadow);min-height:30px;
+  }
+  .assess .glyph{font-size:12px;line-height:1;flex:none}
+  .assess .lbl{
+    flex:1;font-size:10.5px;font-weight:600;color:var(--ink-soft);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.01em;
+  }
+  .assess .countdown{
+    flex:1;font-size:13px;font-weight:800;color:var(--ink);letter-spacing:-.01em;
+    font-feature-settings:"tnum" 1, "lnum" 1;
+  }
+  .assess .countdown small{font-size:9px;font-weight:600;color:var(--muted);margin-left:3px}
+  .assess button{
+    appearance:none;cursor:pointer;font-family:inherit;
+    background:var(--cream-2);border:none;border-radius:7px;padding:5px 9px;
+    font-size:10px;font-weight:700;color:var(--ink);
+  }
+  .assess button:hover{background:#dfd8c5}
+  .assess.active{background:linear-gradient(135deg,#243353 0%,#0E1B33 100%);border-color:transparent;color:#F4EEDF}
+  .assess.active .lbl,
+  .assess.active .countdown{color:#F4EEDF}
+  .assess.active .countdown small{color:rgba(244,238,223,.6)}
+  .assess.active button{background:rgba(244,238,223,.16);color:#F4EEDF}
+  .assess.active button:hover{background:rgba(244,238,223,.28)}
+  .assess.done{background:var(--green-soft);border-color:transparent}
+  .assess.done .lbl{color:#0e7752}
+  .assess.done button{background:var(--green);color:#fff}
+  .assess.done button:hover{background:#11a378}
+
   /* ---- big CTA ---- */
   /* Intentionally NO margin-top:auto — letting the CTA float to the bottom
      of the flex column created a 100px+ blank gap between the action row and
@@ -245,6 +275,17 @@
   }
   .picker .row .close:hover{background:var(--cream-2);color:var(--ink)}
   .picker .empty{font-size:11px;color:var(--muted);text-align:center;padding:18px 0}
+  /* duration picker shares the .picker overlay scaffold */
+  .durations{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+  .durations button{
+    appearance:none;cursor:pointer;font-family:inherit;
+    background:var(--cream);border:2px solid transparent;border-radius:10px;
+    padding:9px 6px;font-size:13px;font-weight:800;color:var(--ink);
+    letter-spacing:-.01em;
+  }
+  .durations button:hover{border-color:var(--ink-soft)}
+  .durations button small{display:block;font-size:9px;font-weight:600;color:var(--muted);
+                          margin-top:2px;text-transform:uppercase;letter-spacing:.06em}
   .picker .spin{
     width:18px;height:18px;border:2px solid var(--cream-2);border-top-color:var(--ink);
     border-radius:50%;animation:spin .8s linear infinite;margin:14px auto;
@@ -265,12 +306,12 @@
   <section class="hero" id="hero">
     <div class="label">Attention</div>
     <div class="num" id="pct">—<small>%</small></div>
-    <div class="sub" id="heroSub">60-second window</div>
+    <div class="sub" id="heroSub">5-minute focus window</div>
     <div class="ring"><i id="bar"></i></div>
   </section>
 
   <section class="preview">
-    <div class="thumb"><img src="/video" alt="" id="thumb"></div>
+    <div class="thumb"><img alt="" id="thumb"></div>
     <div class="meta">
       <b id="camName">camera —</b>
       <span id="camDetail">probing…</span>
@@ -288,11 +329,16 @@
 
   <section class="acts">
     <button class="ico" id="pauseBtn" data-tip="Pause" onclick="toggle()"><span class="glyph" id="pauseGlyph">⏸</span></button>
-    <button class="ico" data-tip="Recalibrate" onclick="ctrl('recalibrate')"><span class="glyph">↻</span></button>
+    <button class="ico" data-tip="Recalibrate" onclick="ctrlRecalibrate()"><span class="glyph">↻</span></button>
     <button class="ico" id="voiceBtn" data-tip="Voice" onclick="toggleVoice()"><span class="glyph" id="voiceGlyph">🔈</span></button>
   </section>
 
-  <button class="cta" onclick="openDashboard()">Open dashboard <span>↗</span></button>
+  <section class="assess" id="assess">
+    <span class="glyph">⏱</span>
+    <span class="lbl" id="assessLbl">Start a focus session</span>
+    <span class="countdown" id="assessCountdown" style="display:none">—</span>
+    <button id="assessBtn" onclick="onAssessClick()">Start</button>
+  </section>
 
   <div class="picker" id="picker" onclick="if(event.target===this) closePicker()">
     <div class="sheet">
@@ -305,13 +351,50 @@
     </div>
   </div>
 
+  <div class="picker" id="durPicker" onclick="if(event.target===this) closeDurPicker()">
+    <div class="sheet">
+      <div class="row">
+        <h3>How long do you want to focus?</h3>
+        <button class="close" onclick="closeDurPicker()" aria-label="Close">×</button>
+      </div>
+      <div class="hint">No chimes, no voice — I'll only check back in at the end with a report.</div>
+      <div class="durations" id="durations">
+        <button data-min="15">15<small>min</small></button>
+        <button data-min="25">25<small>min</small></button>
+        <button data-min="30">30<small>min</small></button>
+        <button data-min="45">45<small>min</small></button>
+        <button data-min="60">60<small>min</small></button>
+        <button data-min="90">90<small>min</small></button>
+      </div>
+    </div>
+  </div>
+
 <script>
-let paused=false, voiceOn=false, lastCamIdx=null;
+let paused=false, voiceOn=false, lastCamIdx=null, apiReady=false;
+
+/* pywebview injects window.pywebview AFTER the page loads. Wait for it
+   before letting any UI control fire. */
+window.addEventListener('pywebviewready', () => {
+  apiReady = true;
+  poll();
+});
+
+function api(){ return (window.pywebview && window.pywebview.api) || null; }
 function pretty(s){return (s||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
-async function ctrl(a){ try{ await fetch('/api/control/'+a,{method:'POST'}); }catch(e){} }
-async function toggle(){ await ctrl(paused?'resume':'pause'); }
+
+/* Python pushes annotated camera frames in here at ~4 fps. */
+window.setFrame = function(dataUrl){
+  const t = document.getElementById('thumb');
+  if(t) t.src = dataUrl;
+};
+
+async function ctrlPause(){ const a=api(); if(a) await a.pause(); }
+async function ctrlResume(){ const a=api(); if(a) await a.resume(); }
+async function ctrlRecalibrate(){ const a=api(); if(a) await a.recalibrate(); }
+async function toggle(){ await (paused ? ctrlResume() : ctrlPause()); }
 async function toggleVoice(){
-  try{ const r=await (await fetch('/api/voice/'+(voiceOn?'off':'on'),{method:'POST'})).json(); voiceOn=r.voice; renderVoice(); }catch(e){}
+  const a = api(); if(!a) return;
+  try{ const v = await a.set_voice(!voiceOn); voiceOn = !!v; renderVoice(); }catch(e){}
 }
 function renderVoice(){
   document.getElementById('voiceGlyph').textContent = voiceOn?'🔊':'🔈';
@@ -319,14 +402,11 @@ function renderVoice(){
   b.classList.toggle('on',voiceOn);
   b.setAttribute('data-tip', 'Voice '+(voiceOn?'on':'off'));
 }
-async function openDashboard(){
-  if(window.pywebview&&window.pywebview.api&&window.pywebview.api.open_dashboard){window.pywebview.api.open_dashboard();}
-  else{ try{ await fetch('/api/open-browser',{method:'POST'}); }catch(e){} }
-}
 
 async function poll(){
+  if(!apiReady){ return; }
   try{
-    const s = await (await fetch('/api/status')).json();
+    const s = await api().status();
     paused=s.paused; voiceOn=!!s.voice; renderVoice();
 
     document.getElementById('pauseGlyph').textContent = paused?'▶':'⏸';
@@ -361,14 +441,18 @@ async function poll(){
     document.getElementById('bar').style.width =
       ((s.calibrating || s.no_camera) ? 0 : pct) + '%';
 
+    const ass = s.assessment || {active:false, completed:false};
+    const heroSubBase = '5-minute focus window';
     document.getElementById('heroSub').textContent =
       s.no_camera ? 'no camera'
       : (s.calibrating ? 'learning baseline'
       : (noFace ? 'no face — estimating in background'
+      : (ass.active ? 'focus session in progress'
       : (s.in_warning ? 'drifted — refocus'
-      : (paused ? 'paused' : '60-second window'))));
+      : (paused ? 'paused' : heroSubBase)))));
 
     document.getElementById('msg').textContent = s.message||'';
+    renderAssessment(ass);
 
     // Camera meta. NOTE: AVFoundation's name does NOT reliably correspond
     // to the cv2 index on this Mac — so we don't warn based on name. The
@@ -381,11 +465,9 @@ async function poll(){
     document.getElementById('camDetail').textContent =
       (ci == null) ? '—'
       : (cr ? cr+' · tap Pick if wrong' : 'tap Pick if wrong');
-    if(ci != null && ci !== lastCamIdx){
-      lastCamIdx = ci;
-      const t = document.getElementById('thumb');
-      t.src = '/video?cam='+ci+'&t='+Date.now();
-    }
+    // Camera-thumb URL is no longer needed — Python pushes JPEG frames in
+    // via window.setFrame at ~4 fps.
+    lastCamIdx = ci;
 
     if(s.today){
       document.getElementById('tFocus').innerHTML = (s.today.avg_focused ?? '—')+'<small>%</small>';
@@ -395,10 +477,69 @@ async function poll(){
   }catch(e){ document.getElementById('state').textContent='offline'; }
 }
 
+/* ---- timed assessment ---- */
+let assessState = {active:false, completed:false, session_id:null};
+function fmtMMSS(sec){
+  sec = Math.max(0, Math.round(sec));
+  const m = Math.floor(sec/60), s = sec%60;
+  return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+}
+function renderAssessment(a){
+  assessState = a || {active:false, completed:false};
+  const row = document.getElementById('assess');
+  const lbl = document.getElementById('assessLbl');
+  const cd  = document.getElementById('assessCountdown');
+  const btn = document.getElementById('assessBtn');
+  row.classList.remove('active','done');
+  if(a.active){
+    row.classList.add('active');
+    lbl.style.display='none';
+    cd.style.display='';
+    cd.innerHTML = fmtMMSS(a.remaining_sec)+'<small>left</small>';
+    btn.textContent = 'End';
+  }else if(a.completed){
+    row.classList.add('done');
+    lbl.style.display='';
+    cd.style.display='none';
+    lbl.textContent = a.ended_early ? 'Session ended early' : 'Session complete';
+    btn.textContent = 'View report';
+  }else{
+    lbl.style.display='';
+    cd.style.display='none';
+    lbl.textContent = 'Start a focus session';
+    btn.textContent = 'Start';
+  }
+}
+async function onAssessClick(){
+  const a = api(); if(!a) return;
+  if(assessState.active){
+    if(!confirm('End the focus session now? The report will note it ended early.')) return;
+    try{ await a.assessment_stop(); }catch(e){}
+    return;
+  }
+  if(assessState.completed){
+    const sid = assessState.session_id;
+    if(sid){ try{ await a.open_report(sid); }catch(e){} }
+    try{ await a.assessment_dismiss(); }catch(e){}
+    return;
+  }
+  openDurPicker();
+}
+function openDurPicker(){ document.getElementById('durPicker').classList.add('open'); }
+function closeDurPicker(){ document.getElementById('durPicker').classList.remove('open'); }
+document.getElementById('durations').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('button[data-min]');
+  if(!b) return;
+  const minutes = parseInt(b.dataset.min, 10);
+  closeDurPicker();
+  const a = api(); if(!a) return;
+  try{ await a.assessment_start(minutes*60); }catch(e){}
+});
+
 /* ---- quit ---- */
 async function shutdownApp(){
-  try{ await fetch('/api/shutdown', {method:'POST'}); }catch(e){}
-  try{ window.close(); }catch(e){}
+  const a = api();
+  if(a){ try{ await a.quit_app(); }catch(e){} }
 }
 
 /* ---- camera picker ---- */
@@ -407,8 +548,9 @@ async function openPicker(){
   const body = document.getElementById('pickerBody');
   body.innerHTML = '<div class="spin"></div>';
   p.classList.add('open');
+  const a = api(); if(!a){ body.innerHTML = '<div class="empty">No bridge.</div>'; return; }
   try{
-    const r = await (await fetch('/api/cameras/probe')).json();
+    const r = await a.cameras_probe();
     renderPicker(r);
   }catch(e){
     body.innerHTML = '<div class="empty">Could not probe cameras.</div>';
@@ -441,10 +583,9 @@ function renderPicker(r){
     btn.onclick = async () => {
       const idx = parseInt(btn.dataset.idx, 10);
       btn.style.opacity = .55;
+      const a = api(); if(!a){ btn.style.opacity = 1; return; }
       try{
-        await fetch('/api/cameras/select',
-          {method:'POST', headers:{'Content-Type':'application/json'},
-           body: JSON.stringify({index: idx})});
+        await a.set_camera_index(idx);
         closePicker();
       }catch(e){ btn.style.opacity = 1; }
     };
@@ -456,34 +597,9 @@ function escapeHtml(s){
   ));
 }
 
-/* ---- compact floating widget: fixed size, anchored top-right ---- */
-const SIZE = { W: 294, H: 460, MARGIN: 18, TOP_GAP: 56 };
-function dock(){
-  try{
-    const aw = screen.availWidth  || screen.width  || 1440;
-    const ah = screen.availHeight || screen.height || 900;
-    const at = screen.availTop    || 0;
-    window.resizeTo(SIZE.W, SIZE.H);
-    window.moveTo(aw - SIZE.W - SIZE.MARGIN, at + SIZE.TOP_GAP);
-  }catch(e){}
-}
-function snapBack(){
-  try{
-    if(window.outerWidth !== SIZE.W || window.outerHeight !== SIZE.H){
-      window.resizeTo(SIZE.W, SIZE.H);
-    }
-  }catch(e){}
-}
-window.addEventListener('load', dock);
-setTimeout(dock, 250);
-setTimeout(dock, 600);
-window.addEventListener('resize', snapBack);
-// Polling snap covers any case where the resize event is throttled or
-// suppressed by the OS during an active drag — guarantees the window can
-// never be sized to anything other than W × H.
-setInterval(snapBack, 180);
-
-poll(); setInterval(poll, 1000);
+/* Window sizing/position is now owned by the host pywebview window — no
+   in-page dock/resize hacks needed. We only drive the data refresh loop. */
+setInterval(poll, 1000);
 </script>
 </body>
 </html>

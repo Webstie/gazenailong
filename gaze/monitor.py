@@ -43,8 +43,8 @@ class _Notifier:
         # actually speaks if voice is enabled
         self._m._say(key, text, cooldown=cooldown, priority=priority)
 
-    def warn_audio_start(self):
-        self._m._audio.warn_audio_start()
+    def warn_audio_start(self, min_interval=None):
+        self._m._audio.warn_audio_start(min_interval=min_interval)
 
     def warn_audio_stop(self):
         self._m._audio.warn_audio_stop()
@@ -82,6 +82,7 @@ class Monitor:
 
         self._lock = threading.Lock()
         self._jpeg = None
+        self._assessment = None   # see start_assessment()
         self._status = {
             "running": False,
             "calibrating": False,
@@ -99,6 +100,7 @@ class Monitor:
             "camera_resolution": None,
             "voice": self._voice,
             "tts_backend": self._audio.tts_backend,
+            "assessment": {"active": False, "completed": False},
         }
         self._last_sample = 0.0
 
@@ -143,6 +145,17 @@ class Monitor:
         with self._lock:
             s = dict(self._status)
         s["today"] = self._store.today_summary()
+        a = self._assessment
+        if a is not None:
+            remaining = max(0.0, a["end_ts"] - time.time()) if a.get("active") else 0.0
+            s["assessment"] = {
+                "active": bool(a.get("active")),
+                "completed": bool(a.get("completed")),
+                "ended_early": bool(a.get("ended_early")),
+                "duration_sec": a.get("duration_sec"),
+                "remaining_sec": round(remaining, 1),
+                "session_id": a.get("session_id"),
+            }
         return s
 
     def latest_jpeg(self):
@@ -212,6 +225,103 @@ class Monitor:
             self.resume()
         else:
             self.pause()
+
+    # ---------- timed assessment ----------
+    def start_assessment(self, duration_sec):
+        """Begin a fixed-duration focus session.
+
+        Behaviour during a session:
+          * the warning state machine is suppressed (no chimes, no voice
+            interruptions), but the gauge and history still update
+          * a fresh store session is opened with kind='assessment' so the
+            report only reflects this window
+        On completion the user gets a single chime + voice line that bypasses
+        the voice toggle (the user explicitly asked to be told when the
+        session ends).
+        """
+        try:
+            duration_sec = int(duration_sec)
+        except (TypeError, ValueError):
+            return None
+        duration_sec = max(60, min(7200, duration_sec))  # 1 min – 2 h
+
+        # Bail out of any active warning so it can't echo into the session.
+        if self._warn is not None and self._warn.in_warning:
+            try:
+                self._warn._exit(speak_recovery=False)
+            except Exception:
+                pass
+        self._audio.warn_audio_stop()
+
+        # Roll over the store session: end whatever's open, then start a
+        # fresh one tagged as an assessment. The report endpoint queries
+        # samples/events by this session_id.
+        self._store.end_session()
+        sid = self._store.start_session(kind="assessment",
+                                        target_seconds=duration_sec)
+        now = time.time()
+        self._assessment = {
+            "active": True,
+            "completed": False,
+            "ended_early": False,
+            "start_ts": now,
+            "end_ts": now + duration_sec,
+            "duration_sec": duration_sec,
+            "session_id": sid,
+        }
+        minutes = int(round(duration_sec / 60))
+        self._set(message=f"{minutes}-minute focus session started — I'll be quiet.",
+                  in_warning=False)
+        log.info("Assessment started: %d s (session %s)", duration_sec, sid)
+        return self._assessment
+
+    def stop_assessment(self, ended_early=True):
+        """Wrap up the current assessment. `ended_early=False` is the natural
+        timer-expiry path (announces completion); `True` is the user-cancel
+        path."""
+        if not self._assessment or not self._assessment.get("active"):
+            return None
+        a = self._assessment
+        a["active"] = False
+        a["completed"] = True
+        a["ended_early"] = bool(ended_early)
+        a["completed_ts"] = time.time()
+
+        # Close the assessment store session. Resume a normal session so the
+        # monitor keeps tracking after the assessment finishes.
+        self._store.end_session(ended_early=ended_early)
+        self._store.start_session(kind="normal")
+
+        minutes = int(round(a["duration_sec"] / 60))
+        if ended_early:
+            text = "Session ended early. Take care."
+        else:
+            text = f"Your {minutes}-minute focus session is complete. Nice work."
+
+        self._set(message=text, in_warning=False)
+        # Completion announcement bypasses the voice toggle (we want the user
+        # to know the session is over even if they had voice muted).
+        try:
+            self._audio.warn_audio_start(min_interval=0.0)
+        except Exception:
+            pass
+        try:
+            self._audio.speak("assessment_done", text, cooldown=0, priority=True)
+        except Exception:
+            pass
+        log.info("Assessment %s (session %s)",
+                 "ended early" if ended_early else "completed",
+                 a.get("session_id"))
+        return a
+
+    def dismiss_assessment(self):
+        """Clear the completed-assessment banner once the user has acked it
+        (e.g. opened the report). The session_id is preserved on the side so
+        the report can still be fetched, but `completed` flips back to False
+        so the sidebar UI returns to its normal layout."""
+        if self._assessment and self._assessment.get("completed"):
+            self._assessment["completed"] = False
+        self._set(message="")
 
     def stop(self):
         self._stop.set()
@@ -306,14 +416,26 @@ class Monitor:
         self._store.start_session()
 
         while not self._stop.is_set():
+            # Timed assessment auto-completion: fires the one-time chime +
+            # voice line and rolls over to a normal session.
+            if self._assessment and self._assessment.get("active"):
+                if time.time() >= self._assessment["end_ts"]:
+                    self.stop_assessment(ended_early=False)
+
             if self._switch.is_set():
                 self._switch.clear()
+                # A camera switch resets calibration → end any active
+                # assessment first (its baseline would no longer apply).
+                if self._assessment and self._assessment.get("active"):
+                    self.stop_assessment(ended_early=True)
                 self._handle_switch()
                 if self._stop.is_set():
                     break
 
             if self._recalib.is_set():
                 self._recalib.clear()
+                if self._assessment and self._assessment.get("active"):
+                    self.stop_assessment(ended_early=True)
                 self._store.end_session()
                 if not self._do_calibration():
                     break
@@ -343,15 +465,25 @@ class Monitor:
             # "I can't see you" message naturally once attention drops past
             # WARN_ENTER_RATIO. That removes both the ugly 0% cliff and the
             # redundant 2-second NO_FACE prompt timer.
-            self._warn.update(result.bad_ratio, result.dominant, no_face=False)
+            assessment_active = bool(self._assessment and
+                                     self._assessment.get("active"))
+            if not assessment_active:
+                self._warn.update(result.warn_bad_ratio, result.dominant,
+                                  no_face=False)
+                in_warning_now = self._warn.in_warning
+            else:
+                # During a timed assessment: do not run the warning state
+                # machine at all. The user explicitly asked for no
+                # interference, so we suppress chimes / voice / banner.
+                in_warning_now = False
             self._set(state=result.state.value,
                       focused=result.focused,
                       face_found=result.face_found,
                       bad_ratio=round(result.bad_ratio, 3),
                       attention=round(result.attention, 3),
-                      in_warning=self._warn.in_warning,
+                      in_warning=in_warning_now,
                       paused=False)
-            if not self._warn.in_warning and result.face_found:
+            if assessment_active or (not in_warning_now and result.face_found):
                 self._set(message="")
             if now - self._last_sample >= C.SAMPLE_LOG_INTERVAL:
                 self._last_sample = now

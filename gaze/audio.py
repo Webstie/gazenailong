@@ -76,7 +76,7 @@ class AudioManager:
         elif self.tts_backend == "pyttsx3":
             try:
                 self._engine = pyttsx3.init()
-                self._engine.setProperty("rate", 170)
+                self._engine.setProperty("rate", 150)
                 self._engine.setProperty("volume", 1.0)
                 self.voice_name = self._select_female_voice(self._engine)
             except Exception:
@@ -181,11 +181,24 @@ class AudioManager:
         def score(name):
             nl = name.lower()
             s = 0
+            # Premium / Enhanced quality bonus.
             if "premium" in nl:
                 s += 4
             elif "enhanced" in nl:
                 s += 3
-            if "samantha" in nl:
+            # Bias toward the warmest neural voices available on modern macOS.
+            # Ava (Premium) is the calmest of the lot; Zoe / Allison are close
+            # runners-up. Samantha is the workable fallback when none of the
+            # newer voices are installed.
+            if "ava" in nl:
+                s += 5
+            elif "zoe" in nl:
+                s += 4
+            elif "allison" in nl:
+                s += 3
+            elif "serena" in nl:
+                s += 2
+            elif "samantha" in nl:
                 s += 1
             return s
 
@@ -198,7 +211,9 @@ class AudioManager:
             args = ["say"]
             if self.voice_name:
                 args += ["-v", self.voice_name]
-            args += ["-r", "180", str(text)]
+            # 155 wpm is noticeably calmer than the macOS default — closer to a
+            # supportive friend's pace than a news anchor.
+            args += ["-r", "155", str(text)]
             proc = subprocess.Popen(args)
             with self._proc_lock:
                 self._proc = proc

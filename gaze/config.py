@@ -31,10 +31,13 @@ CALIB_BAD_STREAK_RESET = 10  # consecutive bad frames before resetting progress
 CALIB_DEADLINE = 30.0        # hard give-up after this many seconds
 
 # -------- Detection thresholds --------
+# Iris/head tolerances are sized for a ~27" monitor at a typical 60 cm
+# viewing distance: looking at the far corner of the screen (~25° off-axis)
+# should still count as focused, not "looking away".
 EAR_OPEN_THRESH = 0.20
-EYE_REL_THRESH = 0.12
-HEAD_YAW_THRESH = 0.15
-HEAD_PITCH_THRESH = 0.15
+EYE_REL_THRESH = 0.25
+HEAD_YAW_THRESH = 0.20
+HEAD_PITCH_THRESH = 0.20
 
 # Eyes briefly closed (typical spontaneous blink: 100–400 ms) shouldn't be
 # treated as drowsiness. Only count eye closure as DROWSY after this many
@@ -59,16 +62,21 @@ CONTINUOUS_SCORING = True
 FOCUS_WINDOW_SECONDS = 60.0      # still used by the binary fallback path
 ATTENTION_FULL_RATIO = 0.667     # EWMA value that maps to 100% attention
 
-# Inner EWMA on the per-frame soft score. α = ln(2) / (t_half * fps) so at
-# 30 fps with t_half = 10 s → α ≈ 0.00231. That gives:
-#   * half-life       ≈ 10 s   (drift 10 s ago → 50% weight now)
-#   * time constant τ ≈ 14.4 s (drift τ s ago → 1/e ≈ 37% weight now)
-#   * equivalent SMA  ≈ 29 s
-# Smaller α = smoother but slower to reflect a change; larger α = snappier
-# but jumpier. This is what makes "30s focused + 30s distracted" score
-# differently from "30s distracted + 30s focused" — the older half of the
-# window contributes exponentially less.
-INNER_EWMA_ALPHA = 0.00231
+# Inner EWMA on the per-frame soft score. α = ln(2) / (t_half * fps). At
+# 30 fps with t_half = 300 s (5 min) → α ≈ 7.7e-5. That gives:
+#   * half-life       ≈ 5 min   (drift 5 min ago → 50% weight now)
+#   * time constant τ ≈ 7.2 min
+#   * equivalent SMA  ≈ 14.4 min
+# The gauge reflects sustained focus over a real work session rather than
+# punishing every glance. Warnings use the separate, shorter EWMA below so
+# they can still fire after a couple of minutes of acute distraction.
+INNER_EWMA_ALPHA = 0.0000770
+
+# Shorter EWMA used ONLY by the warning state machine. 60 s half-life at
+# 30 fps → α = ln(2)/(60*30) ≈ 3.85e-4. With ATTENTION_FULL_RATIO = 0.667
+# and WARN_ENTER_RATIO = 0.60, this fires after roughly 2 minutes of
+# sustained distraction.
+WARN_INNER_EWMA_ALPHA = 0.000385
 
 ATTENTION_EMA_ALPHA = 0.15       # outer EMA, purely cosmetic (anti-jitter)
 
@@ -78,19 +86,27 @@ ATTENTION_EMA_ALPHA = 0.15       # outer EMA, purely cosmetic (anti-jitter)
 # transition is around the inflection point.
 EAR_SOFT_K = 0.03
 EAR_SOFT_RELAX = 0.02
-YAW_SOFT_K = 0.05
-YAW_SOFT_RELAX = 0.05
-PITCH_SOFT_K = 0.05
-PITCH_SOFT_RELAX = 0.05
-EYE_SOFT_K = 0.04
-EYE_SOFT_RELAX = 0.04
+YAW_SOFT_K = 0.07
+YAW_SOFT_RELAX = 0.07
+PITCH_SOFT_K = 0.07
+PITCH_SOFT_RELAX = 0.07
+EYE_SOFT_K = 0.07
+EYE_SOFT_RELAX = 0.07
 
 # -------- Warning state machine --------
-# Driven by `1 - attention` so the existing 0.60 / 0.30 hysteresis means
-# "warn when attention < 40%, recover when attention > 70%".
+# Driven by `1 - warn_attention` (the short-window EWMA). With 60 s half-life
+# and ATTENTION_FULL_RATIO = 0.667, the thresholds below mean:
+#   * warn fires when warn_attention < 0.40  → ~2 min sustained distraction
+#   * warn clears when warn_attention > 0.80 → ~45 s of clean refocus
 WARN_ENTER_RATIO = 0.60
-WARN_EXIT_RATIO = 0.30
-WARN_ESCALATE_SEC = 15.0
+WARN_EXIT_RATIO = 0.20
+
+# Three escalation tiers, measured from when the warning was entered:
+#   tier 1  → on entry        — total ~2 min distraction, gentle nudge
+#   tier 2  → +WARN_TIER2_SEC — total ~5 min, firmer
+#   tier 3  → +WARN_TIER3_SEC — total ~10 min+, more present
+WARN_TIER2_SEC = 180.0   # 3 min into warning ≈ 5 min total
+WARN_TIER3_SEC = 480.0   # 8 min into warning ≈ 10 min total
 NO_FACE_PROMPT_SEC = 2.0
 
 # -------- Camera --------
@@ -104,7 +120,12 @@ MAX_CAMERA_INDEX = 6               # how many indices to scan when switching
 # is OFF by default: distractions are signalled by a short sound + on-screen
 # text. Flip with the sidebar "Voice" toggle or GAZE_VOICE=1.
 VOICE_DEFAULT = False
-ALERT_MIN_INTERVAL = 12.0    # min seconds between alert chimes while distracted
+# Min seconds between alert chimes, per escalation tier. Tier 1 is rare on
+# purpose (one chime when the warning enters); tier 3 is more present so
+# 10-minute+ distractions actually feel urgent.
+ALERT_MIN_INTERVAL = 90.0          # tier 1 (≈ first 3 min of warning)
+ALERT_MIN_INTERVAL_TIER2 = 45.0
+ALERT_MIN_INTERVAL_TIER3 = 25.0
 
 # -------- Behavior logging --------
 SAMPLE_LOG_INTERVAL = 5.0    # seconds between focus-ratio samples written to DB

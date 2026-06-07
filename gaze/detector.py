@@ -637,9 +637,10 @@ class FrameResult:
     face_found: bool
     focused: bool
     state: FocusState
-    bad_ratio: float                 # 1 - attention, kept for the existing UI
+    bad_ratio: float                 # 1 - attention (5-min EWMA), for the gauge / history
     dominant: FocusState
-    attention: float = 0.0           # smoothed 0..1 attention level
+    attention: float = 0.0           # smoothed 0..1 attention level (5-min EWMA)
+    warn_bad_ratio: float = 0.0      # 1 - attention from the short (60s) warning EWMA
     annotated: object = None         # BGR numpy frame with overlay, for live preview
 
 
@@ -664,7 +665,8 @@ class GazeAnalyzer:
         self._smooth_pitch = 0.0
         self._focus_history = deque()      # (ts, bool)  — legacy binary path
         self._state_history = deque()      # (ts, FocusState) — for dominant-state
-        self._inner_score = 0.0            # EWMA-smoothed per-frame soft score
+        self._inner_score = 0.0            # 5-min EWMA on per-frame soft score (gauge / history)
+        self._warn_inner_score = 0.0       # 60-s EWMA on per-frame soft score (warning trigger)
         self._attention = 0.0              # outer-EMA-smoothed display level
         self._eye_closed_since = None      # timestamp eyes first dropped below thresh
         self._last_s_eye_open = 1.0        # last soft-eye-open score; held during blinks
@@ -795,6 +797,7 @@ class GazeAnalyzer:
         # the user is focused, so the gauge starts at 100%. From here, the
         # EWMA will decay naturally if the user actually drifts.
         self._inner_score = 1.0
+        self._warn_inner_score = 1.0
         self._attention = 1.0
         self._eye_closed_since = None
         self._last_s_eye_open = 1.0
@@ -893,6 +896,8 @@ class GazeAnalyzer:
             if C.CONTINUOUS_SCORING:
                 a_inner = C.INNER_EWMA_ALPHA
                 self._inner_score = (1.0 - a_inner) * self._inner_score  # + α·0
+                a_warn = C.WARN_INNER_EWMA_ALPHA
+                self._warn_inner_score = (1.0 - a_warn) * self._warn_inner_score
                 target = max(1e-6, C.ATTENTION_FULL_RATIO)
                 raw_attention = min(1.0, self._inner_score / target)
                 a_outer = C.ATTENTION_EMA_ALPHA
@@ -911,10 +916,13 @@ class GazeAnalyzer:
             dominant = (Counter(bad_states).most_common(1)[0][0]
                         if bad_states else FocusState.NO_FACE)
             bad_ratio = 1.0 - self._attention
+            warn_attention = min(
+                1.0, self._warn_inner_score / max(1e-6, C.ATTENTION_FULL_RATIO))
+            warn_bad_ratio = 1.0 - warn_attention
 
             annotated = self._draw(frame, FocusState.NO_FACE, bad_ratio) if draw else None
             return FrameResult(False, False, FocusState.NO_FACE, bad_ratio,
-                               dominant, self._attention, annotated)
+                               dominant, self._attention, warn_bad_ratio, annotated)
 
         lm = res.multi_face_landmarks[0].landmark
         raw_yaw, raw_pitch = get_head_offset(lm, w, h)
@@ -935,12 +943,15 @@ class GazeAnalyzer:
 
         if C.CONTINUOUS_SCORING:
             # Inner EWMA on the soft per-frame score — gives recency weighting,
-            # so "30s focused then 30s drifted" ends near 0 (the recent half
-            # dominates), while a 60-second simple mean would have stayed at
-            # 0.5 and looked deceptively healthy.
+            # so a long working session is what gets reflected in the gauge.
             a_inner = C.INNER_EWMA_ALPHA
             self._inner_score = (a_inner * soft_score +
                                  (1.0 - a_inner) * self._inner_score)
+            # Parallel short-window EWMA the warning state machine watches —
+            # 60 s half-life so warnings fire after ~2 min of acute distraction.
+            a_warn = C.WARN_INNER_EWMA_ALPHA
+            self._warn_inner_score = (a_warn * soft_score +
+                                      (1.0 - a_warn) * self._warn_inner_score)
             target = max(1e-6, C.ATTENTION_FULL_RATIO)
             raw_attention = min(1.0, self._inner_score / target)
             # Outer EMA is purely cosmetic — keeps the UI gauge from twitching.
@@ -948,20 +959,23 @@ class GazeAnalyzer:
             self._attention = (a_outer * raw_attention +
                                (1.0 - a_outer) * self._attention)
             attention = self._attention
+            warn_attention = min(1.0, self._warn_inner_score / target)
         else:
             good_ratio = (sum(1 for _, x in self._focus_history if x) /
                           max(1, len(self._focus_history)))
             attention = good_ratio
             self._attention = attention
+            warn_attention = good_ratio
 
         bad_ratio = 1.0 - attention
+        warn_bad_ratio = 1.0 - warn_attention
         bad_states = [s for _, s in self._state_history if s != FocusState.FOCUSED]
         dominant = (Counter(bad_states).most_common(1)[0][0]
                     if bad_states else FocusState.FOCUSED)
 
         annotated = self._draw(frame, state, bad_ratio) if draw else None
         return FrameResult(True, focused, state, bad_ratio, dominant,
-                           attention, annotated)
+                           attention, warn_bad_ratio, annotated)
 
     # ---- Live preview overlay ----
     @staticmethod
@@ -1002,27 +1016,39 @@ class WarningController:
         on_exit_warning(state)
     """
 
+    # Three tiers per state, in order of escalation:
+    #   tier 1 — gentle, single nudge at ~2 min total distraction
+    #   tier 2 — firmer, around ~5 min total
+    #   tier 3 — more present, ~10 min+ total (a real break is in order)
     _MESSAGES = {
         FocusState.DROWSY: (
-            "Hey, your eyes look heavy. Try to stay alert.",
-            "You've been drowsy for a while now. It might be time to take a short break.",
+            "Your eyes look a little heavy — take a breath whenever you're ready.",
+            "You've been resting your eyes for a few minutes. A short break could help.",
+            "It's been over ten minutes of heavy eyes. Please take a real break — "
+            "stand up, drink some water, come back when you feel refreshed.",
         ),
         FocusState.LOOKING_AWAY: (
-            "Looks like you've drifted — come back to your work when you're ready.",
-            "You've been away from your work for quite a while. Time to refocus.",
+            "Whenever you're ready, your work is here for you.",
+            "You've been away from your work for a few minutes. Come back when you can.",
+            "It's been over ten minutes now. Take a proper break if you need one, "
+            "then come back focused.",
         ),
         FocusState.HEAD_TURNED: (
-            "Something caught your attention — ready to get back to it?",
-            "You've been turned away for a while now. Let's get back on track.",
+            "Something has your attention — that's okay, take your time.",
+            "You've been turned away for a few minutes. Ready to come back?",
+            "Over ten minutes turned away. Whatever it is can wait, or take a real "
+            "break before coming back.",
         ),
         FocusState.NO_FACE: (
-            "I can't see you — are you still here?",
+            "I can't quite see you — that's okay, take your time.",
             "Still can't see you. Come back when you're ready.",
+            "It's been over ten minutes — checking in. I'm here whenever you return.",
         ),
     }
     _DEFAULT_MESSAGES = (
-        "Hey, looks like you got a bit distracted. Let's get back on track.",
-        "You've been unfocused for a while. Try to bring your attention back to your work.",
+        "Looks like attention drifted a bit — come back when you're ready.",
+        "You've been unfocused for a few minutes. Try to bring your attention back.",
+        "It's been over ten minutes of drifting. Take a proper break if you need one.",
     )
 
     def __init__(self, notifier):
@@ -1058,19 +1084,32 @@ class WarningController:
                 self._emit(dominant_state)
 
     def _emit(self, state):
-        self._n.warn_audio_start()
-        escalated = (time.time() - self._warn_start) >= C.WARN_ESCALATE_SEC
-        key = f"warn_{state.value}_{'esc' if escalated else 'soft'}"
-        # Only enqueue when the (state, escalation) pair actually changes.
-        # Without this, every frame in warning re-runs speak() and even with
-        # the per-key cooldown the TTS queue accumulates utterances that
-        # then keep playing AFTER the user has already refocused.
+        # Pick a tier from how long we've been in warning. Tier 1 covers
+        # ~2-5 min of total distraction (gentle), tier 2 covers ~5-10 min
+        # (firmer), tier 3 takes over at 10 min+ (more present).
+        elapsed = time.time() - self._warn_start
+        if elapsed >= C.WARN_TIER3_SEC:
+            tier = 3
+            chime_gap = C.ALERT_MIN_INTERVAL_TIER3
+            cooldown = 45.0
+        elif elapsed >= C.WARN_TIER2_SEC:
+            tier = 2
+            chime_gap = C.ALERT_MIN_INTERVAL_TIER2
+            cooldown = 60.0
+        else:
+            tier = 1
+            chime_gap = C.ALERT_MIN_INTERVAL
+            cooldown = 90.0
+        self._n.warn_audio_start(min_interval=chime_gap)
+        key = f"warn_{state.value}_t{tier}"
+        # Only enqueue when the (state, tier) pair actually changes. Without
+        # this, every frame in warning re-runs speak() and the TTS queue would
+        # accumulate utterances that keep playing after the user has refocused.
         if key == self._last_emit_key:
             return
         self._last_emit_key = key
-        gentle, urgent = self._MESSAGES.get(state, self._DEFAULT_MESSAGES)
-        text = urgent if escalated else gentle
-        cooldown = 8.0 if escalated else 12.0
+        msgs = self._MESSAGES.get(state, self._DEFAULT_MESSAGES)
+        text = msgs[tier - 1]
         self._n.speak(key, text, cooldown=cooldown)
 
     def _exit(self, speak_recovery):
@@ -1086,5 +1125,5 @@ class WarningController:
             # playing utterance, so the user never hears a stale "you've been
             # drifting" line after they've already come back.
             self._n.speak("refocused",
-                          "Welcome back — you're focused again. Keep it up.",
+                          "Welcome back. You're doing great.",
                           cooldown=0, priority=True)

@@ -1,30 +1,25 @@
 #!/usr/bin/env python3
-"""Gaze Nailong — desktop edition.
+"""Gaze Nailong — native macOS app.
 
-A focus monitor that runs quietly in the background. The default UI is a
-slim **sidebar window** — opened as a chromeless Chrome/Edge "app window"
-(reliable on every Python build) — with a live gauge, camera preview,
-today's stats, and Pause / Recalibrate buttons. A button on the sidebar
-opens the **full web dashboard** (charts + history) in your browser.
+Runs the camera + analysis loop in the background and presents the UI inside
+a native WKWebView window. No browser launches, no localhost server, no
+Flask — everything ships inside a single .app bundle.
 
-Run:
-    python app.py             # sidebar app-window + dashboard server (default)
-    python app.py --webview   # native pywebview window (needs framework Python)
-    python app.py --tray      # menu-bar / tray icon instead of the sidebar
-    python app.py --browser   # no window; just open the dashboard in a browser
-    python app.py --headless  # monitor only, no UI (Orange-Pi-like)
-
-The Orange Pi build now lives in orangepi/ and is untouched.
+UI ↔ Python communication is direct:
+  * JS calls Python via pywebview's js_api bridge (see gaze/bridge.py).
+  * Python pushes live frames into the window with evaluate_js() at ~4 fps.
 """
 
-import os
-import sys
-import time
+import base64
 import logging
+import os
+import re
+import sys
 import threading
-import webbrowser
+import time
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+GAZE_DIR = os.path.join(BASE, "gaze")
 
 
 # ---------- logging ----------
@@ -37,7 +32,6 @@ def _setup_logging():
         format="%(asctime)s  %(levelname)-7s  %(name)s: %(message)s",
         handlers=[logging.FileHandler(log_path), logging.StreamHandler()],
     )
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)  # quiet Flask access logs
     logging.info("Log file: %s", log_path)
     return log_path
 
@@ -45,13 +39,13 @@ def _setup_logging():
 _setup_logging()
 log = logging.getLogger("gaze")
 
-from gaze import config as C
+import webview
 from gaze.monitor import Monitor
-from gaze.server import run_server
+from gaze.bridge import Bridge
 
-DASH_URL = f"http://{C.SERVER_HOST}:{C.SERVER_PORT}/"
-SIDEBAR_URL = f"http://{C.SERVER_HOST}:{C.SERVER_PORT}/sidebar"
+
 WARNING_CANDIDATES = ["warning.wav", "warning.mp3", "warning.aiff"]
+SIDEBAR_W, SIDEBAR_H = 294, 410
 
 
 def _find_alert():
@@ -62,182 +56,28 @@ def _find_alert():
     return None
 
 
-def _wait_for_server(timeout=8.0):
-    """Block until the Flask server answers, so the window never loads a blank page."""
-    import urllib.request
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            urllib.request.urlopen(DASH_URL, timeout=0.5)
-            return True
-        except Exception:
-            time.sleep(0.2)
-    return False
+def _read_html(name):
+    with open(os.path.join(GAZE_DIR, name), "r", encoding="utf-8") as f:
+        return f.read()
 
 
-# ---------- sidebar via a chromeless browser app-window (default) ----------
-def _chromium_path():
-    """Locate a Chromium-based browser that supports --app windows."""
-    if sys.platform == "darwin":
-        cands = [
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        ]
-    elif sys.platform.startswith("win"):
-        roots = [os.environ.get("PROGRAMFILES", ""),
-                 os.environ.get("PROGRAMFILES(X86)", ""),
-                 os.environ.get("LOCALAPPDATA", "")]
-        cands = []
-        for b in roots:
-            if not b:
-                continue
-            cands += [
-                os.path.join(b, r"Google\Chrome\Application\chrome.exe"),
-                os.path.join(b, r"Microsoft\Edge\Application\msedge.exe"),
-                os.path.join(b, r"BraveSoftware\Brave-Browser\Application\brave.exe"),
-            ]
-    else:
-        from shutil import which
-        for n in ("google-chrome", "chromium", "chromium-browser",
-                  "microsoft-edge", "brave-browser"):
-            p = which(n)
-            if p:
-                return p
-        return None
-    for p in cands:
-        if os.path.exists(p):
-            return p
-    return None
+_REMOTE_ASSET = re.compile(
+    r'<link[^>]*(?:fonts\.googleapis\.com|fonts\.gstatic\.com)[^>]*>'
+    r'|<script[^>]+src="https?://[^"]+"[^>]*></script>',
+    re.IGNORECASE,
+)
 
 
-def run_app_window(monitor):
-    """Open the sidebar as a chromeless app-window; fall back to a normal tab."""
-    import subprocess
-    chrome = _chromium_path()
-    if chrome:
-        # A dedicated profile dir forces a fresh Chrome instance, so the size
-        # flags are honoured instead of being forwarded to a running Chrome
-        # (which is why the window opened huge before). The page then docks
-        # itself to the right edge via window.moveTo/resizeTo.
-        profile = os.path.join(os.path.expanduser("~"), ".gazenailong", "chrome")
-        try:
-            subprocess.Popen(
-                [chrome, f"--app={SIDEBAR_URL}",
-                 f"--user-data-dir={profile}",
-                 "--window-size=294,460",
-                 "--no-first-run", "--no-default-browser-check"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            log.info("Sidebar opened as an app window (%s)", os.path.basename(chrome))
-        except Exception:
-            log.exception("Could not launch app window; opening a browser tab")
-            webbrowser.open(SIDEBAR_URL)
-    else:
-        log.info("No Chromium browser found; opening the sidebar in your default browser")
-        webbrowser.open(SIDEBAR_URL)
-    log.info("Monitor running. Press Ctrl-C here to stop.")
-    _idle_until_interrupt(monitor)
-
-
-# ---------- native pywebview window (optional, --webview) ----------
-def run_sidebar(monitor):
-    import webview
-
-    class _Api:
-        def open_dashboard(self):
-            webbrowser.open(DASH_URL)
-
-    # Compact floating widget, top-right corner.
-    W, H, MARGIN, TOP_GAP = 294, 460, 18, 56
-    x = None
-    try:
-        scr = webview.screens[0]
-        x = max(0, scr.width - W - MARGIN)
-    except Exception:
-        pass
-
-    kw = dict(url=SIDEBAR_URL, js_api=_Api(), width=W, height=H,
-              on_top=True, resizable=False, frameless=True)
-    if x is not None:
-        kw["x"], kw["y"] = x, TOP_GAP
-
-    webview.create_window("Gaze Nailong", **kw)
-    log.info("Opening sidebar window")
-    t0 = time.time()
-    webview.start()  # should block on the main thread until the window closes
-    elapsed = time.time() - t0
-
-    # On a non-framework Python build (e.g. Anaconda), the macOS Cocoa event
-    # loop can't start and webview.start() returns instantly. Detect that and
-    # report False so the caller can fall back to the browser dashboard.
-    if elapsed < 2.0:
-        log.warning(
-            "Sidebar window exited after %.2fs — the GUI loop did not start. "
-            "This is the classic non-framework-Python issue on macOS. "
-            "Fix: `conda install -y python.app` then run `pythonw app.py`, "
-            "or just use `python app.py --browser`.", elapsed)
-        return False
-    return True
-
-
-# ---------- tray (optional, --tray) ----------
-def run_tray(monitor):
-    import pystray
-    from pystray import MenuItem as Item
-    from PIL import Image, ImageDraw
-
-    def _icon(color=(86, 211, 100)):
-        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        d.ellipse((6, 18, 58, 46), outline=color, width=5)
-        d.ellipse((26, 24, 40, 40), fill=color)
-        return img
-
-    def paused_state(_):
-        return monitor.status().get("paused", False)
-
-    menu = pystray.Menu(
-        Item(lambda i: "Resume" if paused_state(i) else "Pause",
-             lambda i, it: monitor.toggle()),
-        Item("Recalibrate", lambda i, it: monitor.recalibrate()),
-        Item("Open Dashboard", lambda i, it: webbrowser.open(DASH_URL), default=True),
-        pystray.Menu.SEPARATOR,
-        Item("Quit", lambda i, it: (monitor.stop(), i.stop())),
-    )
-    icon = pystray.Icon("gaze_nailong", _icon(), "Gaze Nailong", menu)
-
-    def updater():
-        last = None
-        while True:
-            s = monitor.status()
-            col = (248, 81, 73) if s.get("in_warning") else \
-                  (86, 211, 100) if s.get("focused") else \
-                  (240, 136, 62) if s.get("running") else (130, 130, 130)
-            if col != last:
-                try:
-                    icon.icon = _icon(col)
-                except Exception:
-                    pass
-                last = col
-            time.sleep(1.0)
-
-    threading.Thread(target=updater, daemon=True).start()
-    log.info("Starting tray icon")
-    icon.run()
-
-
-def _idle_until_interrupt(monitor):
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        monitor.stop()
+def _strip_remote_assets(html):
+    """Belt-and-braces: strip any remaining CDN <link>/<script> tags so the
+    WebView is fully self-contained even if a future edit re-introduces a
+    Google Fonts / jsdelivr reference. System fonts (-apple-system → SF Pro)
+    render almost identically to the Inter we used to load remotely."""
+    return _REMOTE_ASSET.sub("", html)
 
 
 def _reset_history_db():
-    """Each app start begins with a fresh history. Settings (camera index,
-    voice toggle) survive in settings.json — only the focus log is wiped."""
+    """Per-launch fresh history (matches the previous Chrome-app behaviour)."""
     db = os.path.join(os.path.expanduser("~"), ".gazenailong", "history.db")
     try:
         os.remove(db)
@@ -248,54 +88,99 @@ def _reset_history_db():
         log.exception("Could not clear history DB at %s", db)
 
 
+def _frame_pump(monitor):
+    """Push the latest annotated JPEG into every open WebView window at
+    ~4 fps. Replaces the old MJPEG /video endpoint."""
+    while True:
+        time.sleep(0.25)
+        try:
+            j = monitor.latest_jpeg()
+            if not j or not webview.windows:
+                continue
+            b64 = base64.b64encode(j).decode()
+            js = (f"window.setFrame && window.setFrame("
+                  f"'data:image/jpeg;base64,{b64}')")
+            for w in webview.windows:
+                try:
+                    w.evaluate_js(js)
+                except Exception:
+                    pass
+        except Exception:
+            log.exception("Frame pump iteration failed; continuing")
+
+
+def _top_right_position():
+    """Best-effort top-right docking. Returns (x, y) or (None, None) if the
+    screen size is unknown at startup time."""
+    try:
+        scr = webview.screens[0]
+        x = max(0, scr.width - SIDEBAR_W - 18)
+        return x, 56
+    except Exception:
+        return None, None
+
+
 def main():
-    args = set(sys.argv[1:])
     _reset_history_db()
+
     monitor = Monitor(alert_path=_find_alert())
     monitor.start()
     if getattr(monitor._audio, "voice_name", None):
         log.info("TTS voice: %s", monitor._audio.voice_name)
 
-    if "--headless" in args:
-        log.info("Running headless (Ctrl-C to stop).")
-        _idle_until_interrupt(monitor)
-        return
+    sidebar_html = _strip_remote_assets(_read_html("sidebar.html"))
+    report_html = _strip_remote_assets(_read_html("report.html"))
 
-    # start the dashboard server in the background
-    threading.Thread(target=run_server, args=(monitor,), daemon=True).start()
-    _wait_for_server()
-    log.info("Dashboard: %s", DASH_URL)
+    bridge = Bridge(monitor)
+    bridge._asset_html["report"] = report_html
 
-    if "--browser" in args:
-        webbrowser.open(DASH_URL)
-        _idle_until_interrupt(monitor)
-        return
+    x, y = _top_right_position()
+    kw = dict(
+        html=sidebar_html,
+        js_api=bridge,
+        width=SIDEBAR_W, height=SIDEBAR_H,
+        on_top=True, resizable=False, frameless=True,
+    )
+    if x is not None:
+        kw["x"], kw["y"] = x, y
 
-    if "--tray" in args:
+    sidebar = webview.create_window("Gaze Nailong", **kw)
+    bridge._sidebar_window = sidebar
+
+    threading.Thread(target=_frame_pump, args=(monitor,), daemon=True).start()
+
+    def _on_closing():
         try:
-            run_tray(monitor)
-        except Exception:
-            log.exception("Tray unavailable; falling back to browser")
-            webbrowser.open(DASH_URL)
-            _idle_until_interrupt(monitor)
-        return
-
-    if "--webview" in args:
-        # native pywebview window — only reliable on a framework Python build
-        ok = False
-        try:
-            ok = run_sidebar(monitor)
-        except Exception:
-            log.exception("pywebview window unavailable")
-        if ok:
             monitor.stop()
-        else:
-            log.info("Falling back to an app window (Ctrl-C to stop).")
-            run_app_window(monitor)
-        return
+        except Exception:
+            log.exception("Monitor.stop() during window close failed")
+    try:
+        sidebar.events.closing += _on_closing
+    except Exception:
+        # Older pywebview builds use a different event API — best-effort only.
+        pass
 
-    # default: chromeless browser app-window (reliable everywhere)
-    run_app_window(monitor)
+    log.info("Starting WebView event loop")
+    t0 = time.time()
+    webview.start()  # blocks until all windows close
+    elapsed = time.time() - t0
+
+    # On a non-framework Python build (e.g. Anaconda), the macOS Cocoa loop
+    # can't start and webview.start() returns instantly. Surface a clear
+    # error so the dev fixes their environment instead of staring at silence.
+    if elapsed < 2.0:
+        log.error(
+            "WebView event loop exited after %.2fs. This usually means you are "
+            "running on a non-framework Python build (Anaconda is the usual "
+            "culprit). Use the python.org installer or `conda install python.app` "
+            "+ `pythonw app.py`. The packaged .app bundle ships its own Python "
+            "and does not have this issue.", elapsed)
+
+    log.info("All windows closed; exiting")
+    try:
+        monitor.stop()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

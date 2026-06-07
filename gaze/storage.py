@@ -20,9 +20,12 @@ DB_PATH = os.path.join(DB_DIR, "history.db")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    start_ts   REAL NOT NULL,
-    end_ts     REAL
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_ts        REAL NOT NULL,
+    end_ts          REAL,
+    kind            TEXT NOT NULL DEFAULT 'normal',  -- 'normal' | 'assessment'
+    target_seconds  INTEGER,                          -- for timed assessments only
+    ended_early     INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS samples (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,22 +63,23 @@ class Store:
         self._open_event_id = None
 
     # ---------- session lifecycle ----------
-    def start_session(self):
+    def start_session(self, kind="normal", target_seconds=None):
         with self._lock:
             cur = self._db.execute(
-                "INSERT INTO sessions(start_ts) VALUES (?)", (time.time(),))
+                "INSERT INTO sessions(start_ts, kind, target_seconds) VALUES (?,?,?)",
+                (time.time(), kind, target_seconds))
             self._db.commit()
             self.session_id = cur.lastrowid
         return self.session_id
 
-    def end_session(self):
+    def end_session(self, ended_early=False):
         if self.session_id is None:
             return
         self.close_event()  # close any dangling distraction
         with self._lock:
             self._db.execute(
-                "UPDATE sessions SET end_ts=? WHERE id=?",
-                (time.time(), self.session_id))
+                "UPDATE sessions SET end_ts=?, ended_early=? WHERE id=?",
+                (time.time(), 1 if ended_early else 0, self.session_id))
             self._db.commit()
         self.session_id = None
 
@@ -176,6 +180,92 @@ class Store:
             "avg_focused": round((srow["avg_f"] or 0.0) * 100, 1),
             "focused_minutes": focused_min,
             "distractions": erow["c"] or 0,
+        }
+
+    # ---------- timed-assessment report ----------
+    def assessment_report(self, session_id):
+        """Aggregated report for a single (assessment or normal) session.
+        Returns None if the session doesn't exist."""
+        with self._lock:
+            sess = self._db.execute(
+                "SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+            if sess is None:
+                return None
+            samples = self._db.execute(
+                "SELECT ts, focused, state FROM samples WHERE session_id=? ORDER BY ts",
+                (session_id,)).fetchall()
+            events = self._db.execute(
+                "SELECT ts, end_ts, type FROM events WHERE session_id=? ORDER BY ts",
+                (session_id,)).fetchall()
+
+        from .config import SAMPLE_LOG_INTERVAL
+
+        start_ts = sess["start_ts"]
+        end_ts = sess["end_ts"] or time.time()
+        duration_sec = max(0.0, end_ts - start_ts)
+        target = sess["target_seconds"]
+        # the keys() compat: row_factory=Row supports `in row.keys()`
+        keys = sess.keys()
+        ended_early = bool(sess["ended_early"]) if "ended_early" in keys else False
+        kind = sess["kind"] if "kind" in keys else "normal"
+
+        n = len(samples)
+        avg_focused = (sum(s["focused"] for s in samples) / n) if n else 0.0
+
+        # Time-series: seconds-from-start + focused fraction (rounded for JSON size).
+        timeline = [
+            {"t": round(s["ts"] - start_ts, 1), "f": round(s["focused"], 3)}
+            for s in samples
+        ]
+
+        # Distraction breakdown by state name.
+        breakdown = {}
+        for e in events:
+            e_end = e["end_ts"] or end_ts
+            dur = max(0.0, e_end - e["ts"])
+            b = breakdown.setdefault(e["type"], {"count": 0, "seconds": 0.0})
+            b["count"] += 1
+            b["seconds"] += dur
+        for k in breakdown:
+            breakdown[k]["seconds"] = round(breakdown[k]["seconds"], 1)
+            breakdown[k]["minutes"] = round(breakdown[k]["seconds"] / 60.0, 2)
+
+        # Focused vs distracted minutes — approximated from the sample log
+        # (each sample represents SAMPLE_LOG_INTERVAL seconds).
+        focused_seconds = n * SAMPLE_LOG_INTERVAL * avg_focused
+        distracted_seconds = max(0.0, duration_sec - focused_seconds)
+
+        # Longest sustained "focused" stretch — consecutive samples where the
+        # smoothed attention stayed at or above 0.6 (i.e. the gauge was green).
+        longest_focused_sec = 0.0
+        run_start = None
+        run_last = None
+        for s in samples:
+            if s["focused"] >= 0.6:
+                if run_start is None:
+                    run_start = s["ts"]
+                run_last = s["ts"]
+                longest_focused_sec = max(longest_focused_sec, (run_last - run_start))
+            else:
+                run_start = None
+                run_last = None
+
+        return {
+            "session_id": session_id,
+            "kind": kind,
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+            "duration_sec": round(duration_sec, 1),
+            "target_sec": target,
+            "ended_early": ended_early,
+            "avg_focused": round(avg_focused * 100, 1),
+            "focused_minutes": round(focused_seconds / 60.0, 1),
+            "distracted_minutes": round(distracted_seconds / 60.0, 1),
+            "longest_focused_minutes": round(longest_focused_sec / 60.0, 1),
+            "event_count": len(events),
+            "breakdown": breakdown,
+            "timeline": timeline,
+            "sample_count": n,
         }
 
     def close(self):
